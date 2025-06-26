@@ -204,6 +204,7 @@ def process_thread(args, request_queue, response_queue):
             cv2.imwrite(debug_image_filename, image)
             print('Wrote debug image output to: "' + debug_image_filename + '"')
 
+        out_proto.status = network_compute_bridge_pb2.NetworkComputeStatus.NETWORK_COMPUTE_STATUS_SUCCESS
         response_queue.put(out_proto)
 
 
