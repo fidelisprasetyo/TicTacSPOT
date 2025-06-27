@@ -43,8 +43,6 @@ def track(image_client: ImageClient):
     while True:
         image_responses = image_client.get_image_from_sources(["frontleft_fisheye_image", "frontright_fisheye_image"])
     
-    
-
         dtype = np.uint8
 
         gray_frame = np.frombuffer(image_responses[0].shot.image.data, dtype=dtype)

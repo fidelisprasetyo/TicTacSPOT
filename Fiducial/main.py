@@ -33,7 +33,7 @@ import bosdyn.client.estop
 
 #pylint: disable=no-member
 LOGGER = logging.getLogger()
-BOARD_REF = 549
+BOARD_REF = 539
 LIST_IDS = [530, 531, 532, 533, 534, 535, 536, 537, 538]
 # Use this length to make sure we're commanding the head of the robot
 # to a position instead of the center.
