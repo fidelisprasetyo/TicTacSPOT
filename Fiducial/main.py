@@ -27,7 +27,7 @@ from bosdyn.api.geometry_pb2 import SE2Velocity, SE2VelocityLimit, Vec2
 
 import fetch_only_pickup as fetch
 import fiducial_follow as follow
-import fiducial_follow_BostonDynamics as follow_BostonDynamics
+import archive.fiducial_follow_BostonDynamics as follow_BostonDynamics
 import arm_joint_move as place
 import bosdyn.client.estop
 

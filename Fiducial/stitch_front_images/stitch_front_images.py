@@ -15,7 +15,9 @@ from ctypes import *
 import numpy
 import OpenGL
 import pygame
+import cv2
 from OpenGL.GL import *
+from OpenGL.GL import GL_RGB, GL_UNSIGNED_BYTE
 from OpenGL.GL import GL_VERTEX_SHADER, shaders
 from OpenGL.GLU import *
 from PIL import Image
@@ -273,6 +275,13 @@ def draw_routine(display, program, stitching_camera):
             rect_sz_meters = 7
             draw_geometry(plane_wrt_vo, plane_norm_wrt_vo, rect_sz_meters)
 
+    width, height = display
+    buffer = glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE)
+    img = numpy.frombuffer(buffer, dtype=numpy.uint8).reshape((height, width, 3))
+    img = numpy.flipud(img)
+    return img
+
+
 
 def stitch(robot, options):
     """Stitch two front fisheye images together"""
@@ -282,9 +291,9 @@ def stitch(robot, options):
     pygame.display.set_mode(display, pygame.DOUBLEBUF | pygame.OPENGL)
     clock = pygame.time.Clock()
 
-    with open('shader_vert.glsl', 'r') as file:
+    with open('./stitch_front_images/shader_vert.glsl', 'r') as file:
         vert_shader = file.read()
-    with open('shader_frag.glsl', 'r') as file:
+    with open('./stitch_front_images/shader_frag.glsl', 'r') as file:
         frag_shader = file.read()
 
     program = CompiledShader(vert_shader, frag_shader)
@@ -305,8 +314,8 @@ def stitch(robot, options):
 
     while running:
 
-        display = (1080, 720)
-        pygame.display.set_mode(display, pygame.DOUBLEBUF | pygame.OPENGL)
+        # display = (1080, 720)
+        # pygame.display.set_mode(display, pygame.DOUBLEBUF | pygame.OPENGL)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -338,9 +347,15 @@ def stitch(robot, options):
 
         glClearColor(0, 0, 255, 0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        draw_routine(display, program, stitching_camera)
+        stitched_img = draw_routine(display, program, stitching_camera)
         pygame.display.flip()
         clock.tick(60)
+
+        if stitched_img is not None:
+            cv2.imshow("Stitch", stitched_img)
+            if cv2.waitKey(1)==27:
+                running = False
+            
 
 
 def main():
