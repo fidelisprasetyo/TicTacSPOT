@@ -22,7 +22,9 @@ AttributeError: module 'tensorflow' has no attribute 'gfile'
 >> Go to label_map_util.py
 >> replace tf.gfile.GFile to tf.io.gfile.GFile
 
-
+Problem in installing requirements.txt:
+>> In the requirements.txt, change the file path accordingly:
+>> object_detection @ file:///C:/Users/fidel/Documents/TicTacSPOT/Utilities/models-with-protos/research
 
 
 
