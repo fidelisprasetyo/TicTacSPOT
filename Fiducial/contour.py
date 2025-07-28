@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from bosdyn.client.image import ImageClient
 from collections import defaultdict
 
-AREA_MIN = 200
+AREA_MIN = 100
 
 def prepare_image_response(image_responses):
     dtype = np.uint8
@@ -24,10 +24,10 @@ def convert_to_bin(frame):
     # Gaussian blur
     blurred_frame = cv2.GaussianBlur(frame, (5, 5), 0)
     # # Histogram Equalization -> too heavy
-    # chale = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    # eq_frame = chale.apply(blurred_frame)
+    chale = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    eq_frame = chale.apply(blurred_frame)
     # Otsu's thresholding
-    otsu_t, bin_frame = cv2.threshold(blurred_frame, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    otsu_t, bin_frame = cv2.threshold(eq_frame, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     # Morphological closing
     kernel = np.ones((5, 5), np.uint8)
     closed_frame = cv2.morphologyEx(bin_frame, cv2.MORPH_CLOSE, kernel)
@@ -46,14 +46,12 @@ def draw_board(frame, grids):
     for contour in grids:
         cv2.drawContours(frame, [contour], -1, (125, 125, 125), 2)
 
-# grid tuple format: ((x,y), area)
 # grid map:
 # | (2,0) | (2,1) | (2,2)
 # | (1,0) | (1,1) | (1,2)
 # | (0,0) | (0,1) | (0,2)
 
 def get_grid(grids, row, col):
-
     if row == 0 and len(grids) < 3:
         print(f"[Warning] Not enough grids for bottom row (found {len(grids)}).")
         return None
@@ -64,12 +62,15 @@ def get_grid(grids, row, col):
         print(f"[Warning] Not enough grids for top row (found {len(grids)}).")
         return None
 
-    y_sorted = sorted(grids, key=lambda x: x[0][1], reverse=True)
+    # Sort by Y descending (bottom row first)
+    y_sorted = sorted(grids, key=lambda c: compute_center(c)[1], reverse=True)
 
     try:
-        x_sorted_bottom = sorted(y_sorted[:3], key=lambda x: x[0][0])
-        x_sorted_middle = sorted(y_sorted[3:6], key=lambda x: x[0][0])
-        x_sorted_top = sorted(y_sorted[6:9], key=lambda x: x[0][0])
+        # Within each row, sort by X ascending (left to right)
+        x_sorted_bottom = sorted(y_sorted[:3], key=lambda c: compute_center(c)[0])
+        x_sorted_middle = sorted(y_sorted[3:6], key=lambda c: compute_center(c)[0])
+        x_sorted_top = sorted(y_sorted[6:9], key=lambda c: compute_center(c)[0])
+
         if row == 0:
             return x_sorted_bottom[col]
         if row == 1:
@@ -80,14 +81,16 @@ def get_grid(grids, row, col):
     except IndexError:
         print(f"[Error] Column index {col} out of range for row {row}.")
         return None
-
+    
 
 def draw_board_centers(frame, grids):
     for grid in grids:
-        point = grid[0]
-        cv2.putText(frame, ".", point, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+        grid_px = compute_center(grid)
+        cv2.putText(frame, ".", grid_px, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
 
+# grid tuple format: (x,y)
 def get_board_grids(frame):
+    """Returns a list of contour of the grids (unsorted)"""
 
     rectangles = defaultdict(list)
     grids = []
@@ -113,21 +116,53 @@ def get_board_grids(frame):
     for parent, children in rectangles.items():
         if len(children) >= 3:
             for child in children:
-                grid_tuple = (compute_center(child), cv2.contourArea(child))
-                grids.append(grid_tuple)
+                grids.append(child)
 
     return grids
 
+
+def find_circles(frame):
+    rectangles = defaultdict(list)
+    grids_idx = []
+    circles = []
+
+    bin_frame = convert_to_bin(frame)
+    contours, hierarchy = cv2.findContours(bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    if hierarchy is not None:
+        for idx, cnt in enumerate(contours):
+            parent = hierarchy[0][idx][3]
+            if parent == -1:
+                continue
+            cnt_approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
+            if len(cnt_approx) == 4 and cv2.isContourConvex(cnt_approx):
+                area = cv2.contourArea(cnt_approx)
+                if area > AREA_MIN:
+                    rectangles[parent].append(idx)
+
+    for parent, children in rectangles.items():
+        if len(children) >= 3:
+            for child in children:
+                grids_idx.append(child)
+
+    for idx, cnt in enumerate(contours):
+        parent = hierarchy[0][idx][3]
+        if parent in grids_idx:
+            cnt_approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
+            if len(cnt_approx) == 8 and cv2.isContourConvex(cnt_approx) and cv2.contourArea(cnt_approx) > 100:
+                circles.append(compute_center(cnt_approx))
+    return circles
+
+def is_px_inside_contour(contour, x, y):
+    return cv2.pointPolygonTest(contour, (x, y), False) > 0
+
 def is_x_aligned(grid, threshold, x):
-    x_grid = grid[0][0]
+    x_grid = grid[0]
     return abs(x_grid - x) <= threshold
 
 def is_y_aligned(grid, threshold, y):
-    y_grid = grid[0][1]
+    y_grid = grid[1]
     return abs(y_grid - y) <= threshold
-
-def area_diff(grid, target_area):
-    return abs(grid[1] - target_area)
 
 def save_debug_image(image, title="Image", filename="output.png", cmap='gray'):
     plt.figure()

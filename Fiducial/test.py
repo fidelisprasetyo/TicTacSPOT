@@ -5,6 +5,7 @@ import argparse
 import time
 import math
 
+import boardInput
 import bosdyn.client
 import bosdyn.client.lease
 import bosdyn.client.util
@@ -17,45 +18,41 @@ from bosdyn.client.image import ImageClient, pixel_to_camera_space
 from bosdyn.client.robot_command import RobotCommandBuilder, RobotCommandClient, blocking_stand, block_until_arm_arrives
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.util import seconds_to_duration
-from bosdyn.api import image_pb2
 
 from contour import *
-
-from PIL import Image
-import io
+from robot_control import *
 
 #### Some configs (px) #####
-TOLERANCE = 100
-TARGET_AREA = 2500
+TOLERANCE = 50
+GRID_Y_OFFSET = -15    
+ARM_BOARD_DISTANCE = 0.3
+BODY_HEIGHT = 0.3
+ROTATION_VELOCITY = 0.5
 ############################
 
+def get_robot_coordinates(robot_state_client, roll):
+    """Returns the current coordinates of Spot in the world frame."""
+    robot_state = get_vision_tform_body(robot_state_client.get_robot_state().kinematic_state.transforms_snapshot)
+    return {
+        'x': robot_state.x,
+        'y': robot_state.y,
+        'z': robot_state.z,
+        'yaw': robot_state.rot.to_yaw(),
+        'roll': roll
+    }
 
-def robot_move(command_client, _time = 0.5, x = 0.0, y = 0.0, rot = 0.0):
-    cmd = RobotCommandBuilder.synchro_velocity_command(v_x = x, v_y = y, v_rot = rot)
-    command_client.robot_command(command = cmd, end_time_secs = time.time() + _time)
-    time.sleep(1)
+def calc_world_coordinate(image_responses, robot_state_client, x, y):
+    """Returns the world coordinate of a pixel on camera frame and quaternion"""
+    grid_depth = get_depth(image_responses, x, y)
+    y = y + GRID_Y_OFFSET
 
-def robot_roll(command_client, _roll):
-    footprint_R_body = bosdyn.geometry.EulerZXY(yaw=0.0, roll=_roll, pitch=0.0)
-    cmd = RobotCommandBuilder.synchro_stand_command(footprint_R_body=footprint_R_body)
-    command_client.robot_command(command = cmd)
-    time.sleep(1)
-
-
-def get_world_coordinates(grid, image_responses, robot_state_client):
-
-    grid_x = grid[0][0]
-    grid_y = grid[0][1]
-    grid_depth = get_depth(image_responses, grid_x, grid_y)
-
-    if grid_depth == 0:
-        print("we got zero depth!!")
+    if grid_depth == None:
         return None
 
-    cam_coords = pixel_to_camera_space(image_responses[1], grid_x, grid_y, depth=grid_depth)
+    cam_coords = pixel_to_camera_space(image_responses[1], x, y, depth=grid_depth)
     approach_dir = np.array(cam_coords) / np.linalg.norm(cam_coords)
-    offset_cam_coords = cam_coords - approach_dir * 0.30
-    T_world_cam = get_a_tform_b(image_responses[1].shot.transforms_snapshot, "odom", "left_fisheye")
+    offset_cam_coords = cam_coords - approach_dir * ARM_BOARD_DISTANCE
+    T_world_cam = get_a_tform_b(image_responses[1].shot.transforms_snapshot, "vision", "left_fisheye")
     world_point = T_world_cam.transform_point(*offset_cam_coords)
 
     robot_state = robot_state_client.get_robot_state()
@@ -71,12 +68,117 @@ def get_world_coordinates(grid, image_responses, robot_state_client):
     return (world_point, angle_desired)
 
 def get_depth(image_responses, x, y):
+    """Returns the depth of a pixel in camera frame"""
     cv_depth = np.frombuffer(image_responses[0].shot.image.data, dtype=np.uint16)
     cv_depth = cv_depth.reshape(image_responses[0].shot.image.rows, image_responses[0].shot.image.cols)
-
     depth = cv_depth[y, x]/1000
+    return None if depth == 0 else depth
 
-    return depth
+def sort_board_grids(board_grids):
+    """Map the grids into tictactoe board"""
+    sorted_grids = {"00" : get_grid(board_grids, 0,0), "01" : get_grid(board_grids, 0,1), "02" : get_grid(board_grids, 0,2),
+                    "10" : get_grid(board_grids, 1,0), "11" : get_grid(board_grids, 1,1), "12" : get_grid(board_grids, 1,2),
+                    "20" : get_grid(board_grids, 2,0), "21" : get_grid(board_grids, 2,1), "22" : get_grid(board_grids, 2,2)}
+    return sorted_grids
+
+def get_world_grids(image_responses, robot_state_client, board_grids):
+    """Returns the world coordinates of each grid of the game board"""
+    sorted_grids = sort_board_grids(board_grids)
+
+    world_points = {}
+    for grid_key in sorted_grids:
+        grid_px = compute_center(sorted_grids[grid_key])
+        grid_x = grid_px[0]
+        grid_y = grid_px[1]
+        world_points[grid_key] = calc_world_coordinate(image_responses, robot_state_client, grid_x, grid_y)
+    return world_points
+
+def is_game_board_valid(world_grids):
+    """Check all 9 grids in world coordinate"""
+    return all(grid_point is not None for grid_point in world_grids.values())
+        
+def find_board(command_client, robot_state_client, image_client, timeout_time = 15):
+    roll = 0.0
+    rot_v = ROTATION_VELOCITY
+    initial_coord = None
+    world_grids = {}
+    prev_count = 99
+
+    start_time = time.time()
+    current_time = time.time()
+
+    while current_time - start_time < timeout_time:
+        image_responses = image_client.get_image_from_sources(["left_depth_in_visual_frame", "left_fisheye_image"])
+        gray_frame = cv2.imdecode(np.frombuffer(image_responses[1].shot.image.data, dtype=np.uint8), -1)
+        bin_frame = convert_to_bin(gray_frame)
+        img_res = (image_responses[1].shot.image.cols, image_responses[1].shot.image.rows)
+        board_grids = get_board_grids(gray_frame)
+
+        draw_board_centers(bin_frame, board_grids)
+        cv2.imshow("Tictacspot", cv2.resize(bin_frame, (640, 480)))
+
+        grid_count = len(board_grids)
+        if grid_count == 9:
+            grid_11 = compute_center(get_grid(board_grids, 1, 1))
+            if is_x_aligned(grid_11, TOLERANCE, img_res[0]/2):
+                if is_y_aligned(grid_11, TOLERANCE, img_res[1]/2):
+                    print(f"[Detected grids: {grid_count}], Board is found and aligned!")
+                    initial_coord = get_robot_coordinates(robot_state_client, roll)
+                    world_grids = get_world_grids(image_responses, robot_state_client, board_grids)
+                    if is_game_board_valid(world_grids):
+                        return world_grids, initial_coord
+                    else:
+                        print("Failed to validate game board!")
+                        break
+                else:
+                    print(f"[Detected grids: {grid_count}], Board found: aligning...")
+                    roll = roll + 0.1
+                    robot_adjust_roll(command_client, roll, BODY_HEIGHT)
+            else:
+                print(f"[Detected grids: {grid_count}], Board found: aligning...")
+                # if prev_count > grid_count:
+                #     rot_v = -rot_v
+                #     print("Turn back!")
+                # prev_count = grid_count
+                robot_velocity_move(command_client, rot = rot_v)
+
+        elif grid_count >= 3 and grid_count < 9:
+            print(f"[Detected grids: {grid_count}], Board is partially found!")
+            grid_01 = compute_center(get_grid(board_grids, 0, 1))
+            if is_x_aligned(grid_01, TOLERANCE, img_res[0]/2):
+                roll = roll + 0.1
+                robot_adjust_roll(command_client, roll, BODY_HEIGHT)
+            else:
+                print(f"[Detected grids: {grid_count}], Partial found: aligning...")
+                # if prev_count > grid_count:
+                #     rot_v = -rot_v
+                #     print("Turn back!")
+                # prev_count = grid_count
+                robot_velocity_move(command_client, rot = rot_v)
+        else:
+            print("No board is found, try rotate")
+            # if prev_count > grid_count:
+            #     rot_v = -rot_v
+            #     print("Turn back!")
+            # prev_count = grid_count
+            robot_velocity_move(command_client, rot = rot_v)
+        current_time = time.time()
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+    return None, None
+
+def check_board_state(command_client, image_client, initial_coord):
+    robot_trajectory_move(command_client, initial_coord['x'], initial_coord['y'], initial_coord['yaw'])
+    robot_adjust_roll(command_client, initial_coord['roll'], BODY_HEIGHT)
+    image_responses = image_client.get_image_from_sources(["left_fisheye_image"])
+    frame = cv2.imdecode(np.frombuffer(image_responses[0].shot.image.data, dtype=np.uint8), -1)
+    board_grids = sort_board_grids(get_board_grids(frame))
+    circles = find_circles(frame)
+    for circle in circles:
+        for grid in board_grids:
+            if is_px_inside_contour(board_grids[grid], circle[0], circle[1]):
+                print("O is in grid " + str(grid))
 
 def main():
     parser = argparse.ArgumentParser()
@@ -90,8 +192,7 @@ def main():
     bosdyn.client.util.authenticate(robot)
     robot.time_sync.wait_for_sync()
     
-    ### main
-
+    # main
     assert not robot.is_estopped()
     robot_state_client = robot.ensure_client(RobotStateClient.default_service_name)
     lease_client = robot.ensure_client(bosdyn.client.lease.LeaseClient.default_service_name)
@@ -104,107 +205,28 @@ def main():
         robot.logger.info('Robot powered on.')
 
         image_client = robot.ensure_client(ImageClient.default_service_name)
-
-        # stand up!
         command_client = robot.ensure_client(RobotCommandClient.default_service_name)
-        blocking_stand(command_client)
-        time.sleep(1)
 
-        roll = 0.0
-        board_found = False
-        while True:
-            image_responses = image_client.get_image_from_sources(["left_depth_in_visual_frame", "left_fisheye_image"])
+        robot_stand(command_client, BODY_HEIGHT)
+        world_grids, initial_coord = find_board(command_client, robot_state_client, image_client)
 
-            cv_visual = cv2.imdecode(np.frombuffer(image_responses[1].shot.image.data, dtype=np.uint8), -1)
+        if (world_grids, initial_coord) == (None, None):
+            robot.power_off(cut_immediately=False, timeout_sec=20)
+            assert not robot.is_powered_on(), 'Robot power off failed.'
+            robot.logger.info('Robot safely powered off.')
+            return
 
-            img_res = (image_responses[1].shot.image.cols, image_responses[1].shot.image.rows)
-            gray_frame = cv_visual
-            board_grids = get_board_grids(gray_frame)
+        check_board_state(command_client, image_client, initial_coord)
+                            
 
-            draw_board_centers(gray_frame, board_grids)
-            cv2.imshow("Tictacspot", cv2.resize(gray_frame, (640, 480)))
+        robot_arm_stow(command_client)
+        robot_trajectory_move(command_client, initial_coord['x'], initial_coord['y'], initial_coord['yaw'])
+        robot_stand(command_client)
 
-            grid_count = len(board_grids)
-            if not board_found:
-                if grid_count == 9:
-                    grid_11 = get_grid(board_grids, 1, 1)
-                    if is_x_aligned(grid_11, TOLERANCE, img_res[0]/2):
-                        if is_y_aligned(grid_11, TOLERANCE, img_res[1]/2 - 40):
-                            print(f"[Detected grids: {grid_count}], Board is found and aligned!")
-                            board_found = True
-                        else:
-                            print(f"[Detected grids: {grid_count}], Board found: aligning...")
-                            if roll == 0.4:
-                                roll = 0.0
-                            else:
-                                roll = roll + 0.1
-                            robot_roll(command_client, roll)
-                    else:
-                        print(f"[Detected grids: {grid_count}], Board found: aligning...")
-                        robot_move(command_client, rot = 0.5)
-                elif grid_count >= 3 and grid_count < 9:
-                    print(f"[Detected grids: {grid_count}], Board is partially found!")
-                    grid_01 = get_grid(board_grids, 0, 1)
+        robot.power_off(cut_immediately=False, timeout_sec=20)
+        assert not robot.is_powered_on(), 'Robot power off failed.'
+        robot.logger.info('Robot safely powered off.')
 
-                    if is_x_aligned(grid_01, TOLERANCE, img_res[0]/2):
-                        if roll == 0.4:
-                            roll = 0.0
-                        else:    
-                            roll = roll + 0.1
-                        robot_roll(command_client, roll)
-                    else:
-                        print(f"[Detected grids: {grid_count}], Partial found: aligning...")
-                        robot_move(command_client, rot = 0.5)
-                else:
-                    print("No board is found, try rotate")
-                    robot_move(command_client, rot = 0.5)
-
-            
-            if board_found:
-                grids = [get_grid(board_grids, 0,0), get_grid(board_grids, 0,1), get_grid(board_grids, 0,2)]
-                world_points = []
-                for grid in grids:
-                    world_points.append(get_world_coordinates(grid, image_responses, robot_state_client))
-
-                #blocking_stand(command_client)
-                for world_point in world_points:
-                    # gaze_command = RobotCommandBuilder.arm_gaze_command(x = world_point[0][0], y = world_point[0][1], z = world_point[0][2], frame_name="odom")
-                    arm_command = RobotCommandBuilder.arm_pose_command(
-                        frame_name="odom",
-                        x = world_point[0][0],
-                        y = world_point[0][1],
-                        z = world_point[0][2],
-                        qw = np.cos(world_point[1] / 2),
-                        qx = 0.0,
-                        qy = 0.0,
-                        qz = np.sin(world_point[1] / 2),
-                        seconds=2.0
-                    )
-                    follow_arm_command = RobotCommandBuilder.follow_arm_command()
-                    # gripper_command = RobotCommandBuilder.claw_gripper_open_command()
-                    synchro_command = RobotCommandBuilder.build_synchro_command(arm_command, follow_arm_command)
-                    command_client.robot_command(synchro_command)
-                    time.sleep(10)
-
-                # grid_01_area = get_grid(board_grids, 0, 1)[1]
-                # area_diff = TARGET_AREA - grid_01_area
-                # if area_diff > 300:
-                #     print(f"Area difference: {area_diff}, moving closer...")
-                #     robot_move(command_client, y=-0.2)
-                # elif area_diff < -300:
-                #     robot_move(command_client, y=0.2)
-                #     print(f"Area difference: {area_diff}, moving farther...")
-                # else:
-                #     if grid_count == 9:
-                #         print("PERFECT")
-                #     else:
-                #         board_found = False
-
-            #Press 'q' to exit
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-        cv2.destroyAllWindows()
-    
 
     # ### for testing purposes
     # image_client = robot.ensure_client(ImageClient.default_service_name)
@@ -212,28 +234,9 @@ def main():
     # while True:
     #     image_responses = image_client.get_image_from_sources(["left_depth_in_visual_frame", "left_fisheye_image"])
 
-    #     cv_depth = np.frombuffer(image_responses[0].shot.image.data, dtype=np.uint16)
-    #     cv_depth = cv_depth.reshape(image_responses[0].shot.image.rows, image_responses[0].shot.image.cols)
     #     cv_visual = cv2.imdecode(np.frombuffer(image_responses[1].shot.image.data, dtype=np.uint8), -1)
-    #     visual_rgb = cv_visual if len(cv_visual.shape) == 3 else cv2.cvtColor(
-    #     cv_visual, cv2.COLOR_GRAY2RGB)
-    #     min_val = np.min(cv_depth)
-    #     max_val = np.max(cv_depth)
-    #     depth_range = max_val - min_val
-    #     depth8 = (255.0 / depth_range * (cv_depth - min_val)).astype('uint8')
-    #     depth8_rgb = cv2.cvtColor(depth8, cv2.COLOR_GRAY2RGB)
-    #     depth_color = cv2.applyColorMap(depth8_rgb, cv2.COLORMAP_JET)
-    #     out = cv2.addWeighted(visual_rgb, 0.5, depth_color, 0.5, 0)
-
-    #     # board_girds = get_board_grids(cv_visual)
-    #     # grid_11 = get_grid(board_girds, 1, 1)
-
-    #     # depth_mm = cv_depth[grid_11[0][1], grid_11[0][0]]
-    #     # depth_m = depth_mm / 1000.0
-
-
-    #     # draw_board_centers(cv_visual, board_girds)
-    #     cv2.imshow("Tictacspot", out)
+    #     find_circles(cv_visual)
+    #     cv2.imshow("Tictacspot", cv_visual)
     
     #     if cv2.waitKey(1) & 0xFF == ord('q'):
     #         break
