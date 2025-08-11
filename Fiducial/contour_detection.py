@@ -1,10 +1,9 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from bosdyn.client.image import ImageClient
 from collections import defaultdict
 
-AREA_MIN = 100
+AREA_MIN = 50
 
 def prepare_image_response(image_responses):
     dtype = np.uint8
@@ -19,20 +18,29 @@ def prepare_image_response(image_responses):
 
     return frame
 
-def convert_to_bin(frame):
+def convert_to_bin(frame, equalize = True, close = False, erosion = True):
 
     # Gaussian blur
-    blurred_frame = cv2.GaussianBlur(frame, (5, 5), 0)
-    # # Histogram Equalization -> too heavy
-    chale = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    eq_frame = chale.apply(blurred_frame)
-    # Otsu's thresholding
-    otsu_t, bin_frame = cv2.threshold(eq_frame, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    # Morphological closing
-    kernel = np.ones((5, 5), np.uint8)
-    closed_frame = cv2.morphologyEx(bin_frame, cv2.MORPH_CLOSE, kernel)
+    frame = cv2.GaussianBlur(frame, (5, 5), 0)
 
-    return closed_frame
+    # # Histogram Equalization
+    if equalize:
+        chale = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        frame = chale.apply(frame)
+
+    # Otsu's thresholding
+    otsu_t, frame = cv2.threshold(frame, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    # Morphological closing
+    if close:
+        kernel = np.ones((5, 5), np.uint8)
+        frame = cv2.morphologyEx(frame, cv2.MORPH_CLOSE, kernel)
+
+    if erosion:
+        kernel = np.ones((5,5), np.uint8)
+        frame = cv2.erode(frame, kernel, iterations=1)
+
+    return frame
 
 def compute_center(contour):
     M = cv2.moments(contour)
@@ -81,14 +89,12 @@ def get_grid(grids, row, col):
     except IndexError:
         print(f"[Error] Column index {col} out of range for row {row}.")
         return None
-    
 
 def draw_board_centers(frame, grids):
     for grid in grids:
         grid_px = compute_center(grid)
         cv2.putText(frame, ".", grid_px, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
 
-# grid tuple format: (x,y)
 def get_board_grids(frame):
     """Returns a list of contour of the grids (unsorted)"""
 
@@ -120,37 +126,15 @@ def get_board_grids(frame):
 
     return grids
 
-
 def find_circles(frame):
-    rectangles = defaultdict(list)
-    grids_idx = []
     circles = []
+    bin_frame = convert_to_bin(frame, close = False)
+    contours, _ = cv2.findContours(bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    bin_frame = convert_to_bin(frame)
-    contours, hierarchy = cv2.findContours(bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-    if hierarchy is not None:
-        for idx, cnt in enumerate(contours):
-            parent = hierarchy[0][idx][3]
-            if parent == -1:
-                continue
-            cnt_approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
-            if len(cnt_approx) == 4 and cv2.isContourConvex(cnt_approx):
-                area = cv2.contourArea(cnt_approx)
-                if area > AREA_MIN:
-                    rectangles[parent].append(idx)
-
-    for parent, children in rectangles.items():
-        if len(children) >= 3:
-            for child in children:
-                grids_idx.append(child)
-
-    for idx, cnt in enumerate(contours):
-        parent = hierarchy[0][idx][3]
-        if parent in grids_idx:
-            cnt_approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
-            if len(cnt_approx) == 8 and cv2.isContourConvex(cnt_approx) and cv2.contourArea(cnt_approx) > 100:
-                circles.append(compute_center(cnt_approx))
+    for _, cnt in enumerate(contours):
+        cnt_approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
+        if len(cnt_approx) == 8 and cv2.isContourConvex(cnt_approx) and cv2.contourArea(cnt_approx) > 100:
+            circles.append(compute_center(cnt_approx))
     return circles
 
 def is_px_inside_contour(contour, x, y):
