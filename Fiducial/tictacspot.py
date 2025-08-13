@@ -14,10 +14,9 @@ from bosdyn.api.geometry_pb2 import SE2Velocity, SE2VelocityLimit, Vec2
 from contour_detection import *
 import fetch_only_pickup as fetch
 
-ARM_BOARD_GAZE_OFFSET = 0.2
-TOLERANCE = 70
+ARM_BOARD_GAZE_OFFSET = 0.15
+TOLERANCE = 30
 BODY_HEIGHT = 0.3
-ROTATION_VELOCITY = 0.5
 FORCE_THRESHOLD = 20
 Y_BOTTOM_OFFSET = 8
 Y_MIDDLE_OFFSET = 10
@@ -36,6 +35,9 @@ class TicTacSpot:
         self.best_view_roll = 0.0
         self.board_gaze_coord = {}
 
+        _image_responses = self.image_client.get_image_from_sources(["left_fisheye_image"])
+        self._width, self._height = (_image_responses[0].shot.image.cols, _image_responses[0].shot.image.rows)
+
 
     ### Tictacspot Main Methods
     
@@ -48,10 +50,8 @@ class TicTacSpot:
         while current_time - start_time < timeout_time:
             image_responses = self.image_client.get_image_from_sources(["left_depth_in_visual_frame", "left_fisheye_image"])
             gray_frame = cv2.imdecode(np.frombuffer(image_responses[1].shot.image.data, dtype=np.uint8), -1)
-            img_res = (image_responses[1].shot.image.cols, image_responses[1].shot.image.rows)
-
             board_grids = get_board_grids(gray_frame)
-
+            
             bin_frame = convert_to_bin(gray_frame)
             draw_board_centers(bin_frame, board_grids)
             cv2.imshow("Tictacspot", cv2.resize(bin_frame, (640, 480)))
@@ -59,8 +59,9 @@ class TicTacSpot:
             grid_count = len(board_grids)
             if grid_count == 9:
                 grid_11 = compute_center(get_grid(board_grids, 1, 1))
-                if is_x_aligned(grid_11, TOLERANCE, img_res[0]/2):
-                    if is_y_aligned(grid_11, TOLERANCE, img_res[1]/2):
+
+                if is_x_aligned(grid_11[0], self._width/2, TOLERANCE):
+                    if is_y_aligned(grid_11[1], self._height/2, TOLERANCE):
                         print(f"[Detected grids: {grid_count}], Board is found and aligned!")
                         self._set_initial_coordinates()
                         self.best_view_roll = roll
@@ -70,31 +71,33 @@ class TicTacSpot:
                             print("Board is found and successfully mapped")
                         break
                     else:
-                        print(f"[Detected grids: {grid_count}], Board found: aligning...")
+                        print(f"[Detected grids: {grid_count}], Board found: aligning the board vertically...")
                         roll = roll + 0.1
                         self.adjust_roll(roll, body_height = BODY_HEIGHT)
                 else:
-                    print(f"[Detected grids: {grid_count}], Board found: aligning...")
-                    self.velocity_move(duration = 0.5, rot = ROTATION_VELOCITY)
+                    print(f"[Detected grids: {grid_count}], Board found: aligning the board horizontally")
+                    self.velocity_move(duration = 0.5, rot = 0.5)
 
             elif grid_count >= 3 and grid_count < 9:
-                print(f"[Detected grids: {grid_count}], Board is partially found!")
                 grid_01 = compute_center(get_grid(board_grids, 0, 1))
-                if is_x_aligned(grid_01, TOLERANCE, img_res[0]/2):
+                if is_x_aligned(grid_01[0], self._width/2, TOLERANCE):
+                    print(f"[Detected grids: {grid_count}], Board partially found: aligning the board vertically...")
                     roll = roll + 0.1
                     self.adjust_roll(roll, body_height = BODY_HEIGHT)
                 else:
-                    print(f"[Detected grids: {grid_count}], Partial found: aligning...")
-                    if(grid_01[0] > img_res[0]/2):
-                        self.velocity_move(duration = 0.5, rot = -ROTATION_VELOCITY)
+                    print(f"[Detected grids: {grid_count}], Board partically found: aligning the board horizontally")
+                    if(grid_01[0] > self._width/2):
+                        self.velocity_move(duration = 0.5, rot = -0.5)
                     else:
-                        self.velocity_move(duration = 0.5, rot = ROTATION_VELOCITY)
+                        self.velocity_move(duration = 0.5, rot = 0.5)
             else:
                 print("No board is found, try rotate")
                 self.velocity_move(duration = 1, rot = 1)
+
             current_time = time.time()
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
+
         cv2.destroyAllWindows()
         if not is_board_found:
             print("Failed to find the board")
@@ -110,7 +113,7 @@ class TicTacSpot:
         self.arm_pose(self.board_gaze_coord[grid_id])
 
         while self._is_pushing_under_threshold(FORCE_THRESHOLD):
-            self.arm_push(0.5, 0.05)
+            self.arm_push(0.5, 0.1)
             time.sleep(0.25)
 
         print("Touched the board! Release the grip")
@@ -123,10 +126,10 @@ class TicTacSpot:
         self.arm_stow()
         self.gripper_close()
 
-    def get_O_positions(self):
+    def detect_O_positions(self):
         O_piece_list = []
         self.go_to_initial()
-        self.adjust_roll(self.best_view_roll)
+        self.adjust_roll(self.best_view_roll, body_height=BODY_HEIGHT)
 
         image_response = self.image_client.get_image_from_sources(["left_fisheye_image"])
         gray_frame = cv2.imdecode(np.frombuffer(image_response[0].shot.image.data, dtype=np.uint8), -1)
@@ -139,6 +142,7 @@ class TicTacSpot:
                     if is_px_inside_contour(board_grids[grid_id], circle[0], circle[1]):
                         O_piece_list.append(grid_id)
         else:
+            self.stand()
             return -1
         return O_piece_list
 
@@ -191,6 +195,7 @@ class TicTacSpot:
             world_points[grid_key] = self._calc_world_coordinate(image_responses, grid_px[0], grid_px[1], depth_map[grid_key], offset_distance, grid_key)
 
         return world_points
+
 
     def _get_depth(self, image_responses, x, y):
         """Returns the depth of a pixel in camera frame"""
@@ -255,8 +260,10 @@ class TicTacSpot:
         self.command_client.robot_command(command = cmd)
         time.sleep(1)
     
-    def trajectory_move(self, x, y, yaw, frame_name = VISION_FRAME_NAME, timeout_sec = 5.0):
-        while not self._is_at_target(x, y , yaw):
+    def trajectory_move(self, x, y, yaw, frame_name = VISION_FRAME_NAME, end_time = 5.0):
+        start_time = time.time()
+        current_time = time.time()
+        while not self._is_at_target(x, y , yaw) and (current_time - start_time < end_time):
             cmd = RobotCommandBuilder.synchro_se2_trajectory_point_command(
             goal_x = x, 
             goal_y = y, 
@@ -266,8 +273,8 @@ class TicTacSpot:
             params = self._set_mobility_params(),
             locomotion_hint = spot_command_pb2.HINT_AUTO)
 
-            self.command_client.robot_command(command = cmd, end_time_secs = time.time() + timeout_sec)
-            time.sleep(timeout_sec)
+            current_time = time.time()
+            self.command_client.robot_command(command = cmd, end_time_secs = time.time() + end_time)
     
     def arm_stow(self, timeout_sec = 3.0):
         stow = RobotCommandBuilder.arm_stow_command()

@@ -26,7 +26,7 @@ def actions(board):
     #Old code ---> Takes in a board with id numbers + X + O
     # for i, row in enumerate(board):
     #     for j, cell in enumerate(row):
-    #         if cell in EMPTY:
+    #         if cell is None:
     #             actions.add((i, j))
 
     return actions
@@ -58,25 +58,25 @@ def winner(board):
                       [(0, 0), (1, 1), (2, 2)],
                       [(0, 2), (1, 1), (2, 0)]]
     
-    """for wins in winning_combos:                
-        X_count = 0
-        O_count = 0
-        for i, j in wins:
-            if board[i][j] == X:
-                X_count += 1
-            elif board[i][j] == O:
-                O_count += 1
-        if O_count == 3:
-            return O
-        elif X_count == 3:
-            return X
-    return None 
-    """
-    #New Code for winner function
+    # """for wins in winning_combos:"""                
+    # X_count = 0
+    # O_count = 0
+    # for i, j in wins:
+    #     if board[i][j] == X:
+    #         X_count += 1
+    #     elif board[i][j] == O:
+    #         O_count += 1
+    #     if O_count == 3:
+    #         return O
+    #     elif X_count == 3:
+    #         return X
+    # return None 
+    # #New Code for winner function
     for combo in winning_combos:
         if board[combo[0][0]][combo[0][1]] == board[combo[1][0]][combo[1][1]] == board[combo[2][0]][combo[2][1]] != None:
             return board[combo[0][0]][combo[0][1]]
     return None
+
 # Returns True if game is over, False otherwise
 def terminal(board):
     # If there is a winner, game is over

@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-AREA_MIN = 50
+AREA_MIN = 100
 
 def prepare_image_response(image_responses):
     dtype = np.uint8
@@ -95,7 +95,7 @@ def draw_board_centers(frame, grids):
         grid_px = compute_center(grid)
         cv2.putText(frame, ".", grid_px, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
 
-def get_board_grids(frame):
+def get_board_grids(frame, area_min = AREA_MIN):
     """Returns a list of contour of the grids (unsorted)"""
 
     rectangles = defaultdict(list)
@@ -116,7 +116,7 @@ def get_board_grids(frame):
             # filter out non-rectangles
             if len(cnt_approx) == 4 and cv2.isContourConvex(cnt_approx):
                 area = cv2.contourArea(cnt_approx)
-                if area > AREA_MIN:
+                if area > area_min:
                     rectangles[parent].append(cnt_approx)
 
     for parent, children in rectangles.items():
@@ -140,13 +140,11 @@ def find_circles(frame):
 def is_px_inside_contour(contour, x, y):
     return cv2.pointPolygonTest(contour, (x, y), False) > 0
 
-def is_x_aligned(grid, threshold, x):
-    x_grid = grid[0]
-    return abs(x_grid - x) <= threshold
+def is_x_aligned(x, x_target, threshold):
+    return abs(x - x_target) <= threshold
 
-def is_y_aligned(grid, threshold, y):
-    y_grid = grid[1]
-    return abs(y_grid - y) <= threshold
+def is_y_aligned(y, y_target, threshold):
+    return abs(y - y_target) <= threshold
 
 def save_debug_image(image, title="Image", filename="output.png", cmap='gray'):
     plt.figure()

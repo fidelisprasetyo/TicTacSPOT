@@ -158,6 +158,7 @@ def find_center_px(polygon):
 
 
 def pick_up(options, robot):
+    
     cv2.namedWindow("Fetch")
     cv2.waitKey(500)
     # Time sync is necessary so that time-based filter requests can be converted
@@ -178,6 +179,7 @@ def pick_up(options, robot):
     while True:
         holding_piece = False
         while not holding_piece:
+
             # Capture an image and run ML on it.
             X, image, vision_tform_dogtoy = get_obj_and_img(
                 network_compute_client, _ml_service, _model,

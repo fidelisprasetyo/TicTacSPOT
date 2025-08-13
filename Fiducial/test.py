@@ -59,62 +59,70 @@ def main():
         spot.find_board()
         spot.stand()
 
+        spot.pick_up()
+        spot.place('01')
+        spot.go_to_initial()
+
+        # spot.go_to_initial()
+
         # Tic Tac Toe
-        player_turn = ttt.O
-        spot_turn = ttt.X
-        board = BoardVisualInput()
-        board.print()
+        # player_turn = ttt.O
+        # spot_turn = ttt.X
+        # board = BoardVisualInput()
+        # board.print()
 
-        empty_grid_count = board.get_empty_grid_count()
+        # empty_grid_count = board.get_empty_grid_count()
 
-        while empty_grid_count > 0:
+        # while empty_grid_count > 0:
 
-            if empty_grid_count <= 4:
-                piece = ttt.winner(board.get_board_state())
-                if piece == ttt.X:
-                    print("Spot wins")
-                    break
-                elif piece == ttt.O:
-                    print("Player wins")
-                    break
+        #     if empty_grid_count <= 4:
+        #         piece = ttt.winner(board.get_board_state())
+        #         if piece == ttt.X:
+        #             print("Spot wins")
+        #             break
+        #         elif piece == ttt.O:
+        #             print("Player wins")
+        #             break
             
-            if empty_grid_count % 2 == 0:
-                current_turn = spot_turn
-            else:
-                current_turn = player_turn
+        #     if empty_grid_count % 2 == 0:
+        #         current_turn = spot_turn
+        #     else:
+        #         current_turn = player_turn
             
-            if current_turn == player_turn:
-                print("Player's turn!")
-                time.sleep(5) # time based check
-                O_positions = spot.get_O_positions()
+        #     if current_turn == player_turn:
+        #         print("Player's turn!")
+        #         spot.stand()
+        #         time.sleep(5) # time based check
+        #         O_positions = spot.detect_O_positions()
 
-                if O_positions == -1:
-                    print("Failed to detect the board....")
-                    continue
+        #         if O_positions == -1:
+        #             print("Failed to detect the board....")
+        #             continue
 
-                move = board.get_player_move(O_positions)
-                if move:
-                    print(f"Player's move: ({move[0]}, {move[1]})")
-                    board.update_O(move)
-                    board.print()
-            else:
-                print("Spot's turn!")
-                move, _ = ttt.minimax(board.get_board_state())
-                print(f"Spot's move: {move}")
+        #         move = board.get_player_move(O_positions)
+        #         if move:
+        #             print(f"Player's move: ({move[0]}, {move[1]})")
+        #             board.update_O(move)
+        #             board.print()
+                
+        #     else:
+        #         print("Spot's turn!")
+        #         move, _ = ttt.minimax(board.get_board_state())
+        #         print(f"Spot's move: {move}")
 
-                spot.pick_up()
-                spot.place(f"{move[0]}{move[1]}")
-                board.update_X(move)
-                board.print()
+        #         spot.pick_up()
+        #         spot.place(f"{move[0]}{move[1]}")
+        #         board.update_X(move)
+        #         board.print()
 
-                spot.go_to_initial()
+        #         spot.go_to_initial()
             
-            empty_grid_count = board.get_empty_grid_count()
+        #     empty_grid_count = board.get_empty_grid_count()
 
         # if piece == None:
         #     print("Draw!")
 
-        spot.power_off()
+        # spot.power_off()
 
     
 
