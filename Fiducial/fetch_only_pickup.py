@@ -156,6 +156,9 @@ def find_center_px(polygon):
     return (x, y)
 
 
+PICK_UP_STATUS_FAIL = 0
+PICK_UP_STATUS_SUCCESS = 1
+PICK_UP_STATUS_NOT_FOUND = 2
 
 def pick_up(options, robot):
     
@@ -176,6 +179,8 @@ def pick_up(options, robot):
     
     vision_tform_hand_at_drop = None
 
+    try_count = 0
+
     while True:
         holding_piece = False
         while not holding_piece:
@@ -185,18 +190,22 @@ def pick_up(options, robot):
                 network_compute_client, _ml_service, _model,
                 confidence, kImageSources, 'X')
 
+            if try_count == 3:
+                return PICK_UP_STATUS_NOT_FOUND
+
             if X is None:
                 # Didn't find anything, keep searching.
                 print("Didn't find anything")
+                try_count += 1
                 continue
 
             # If we have already dropped the X Piece off, make sure it has moved a sufficient amount before
             # picking it up again
-            if vision_tform_hand_at_drop is not None and pose_dist(
-                    vision_tform_hand_at_drop, vision_tform_dogtoy) < 0.5:
-                print('Found X, but it hasn\'t moved.  Waiting...')
-                time.sleep(1)
-                continue
+            # if vision_tform_hand_at_drop is not None and pose_dist(
+            #         vision_tform_hand_at_drop, vision_tform_dogtoy) < 0.5:
+            #     print('Found X, but it hasn\'t moved.  Waiting...')
+            #     time.sleep(1)
+            #     continue
 
             print('Found X...')
 
@@ -307,9 +316,9 @@ def pick_up(options, robot):
                 failed = current_state in failed_states
                 grasp_done = current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED or failed
 
-                time.sleep(0.5)
+                time.sleep(0.25)
 
-            time.sleep(0.5)
+            time.sleep(0.25)
             if current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED:
                 print(robot_state_client.get_robot_state().manipulator_state.gripper_open_percentage)
                 gripper_degree = robot_state_client.get_robot_state().manipulator_state.gripper_open_percentage
@@ -333,7 +342,7 @@ def pick_up(options, robot):
 
                     block_until_arm_arrives(command_client, command_client.robot_command(stow), 3.0)
                     print("Failed to grab")
-                    return False
+                    return PICK_UP_STATUS_FAIL
                 else:
                     holding_piece = not failed       
             else:
@@ -341,7 +350,7 @@ def pick_up(options, robot):
                 
 
             
-        time.sleep(2)
+        time.sleep(0.25)
         # Move the arm to a carry position.
         grasp_holding_override = manipulation_api_pb2.ApiGraspOverride(
             override_request=manipulation_api_pb2.ApiGraspOverride.OVERRIDE_HOLDING)
@@ -369,8 +378,8 @@ def pick_up(options, robot):
         # block_until_arm_arrives(command_client, command_client.robot_command(stow), 3.0)
                     
         # Wait for the stow command to finish
-        time.sleep(0.75)
-        return True
+        time.sleep(0.25)
+        return PICK_UP_STATUS_SUCCESS
     
 
 def compute_stand_location_and_yaw(vision_tform_target, robot_state_client, distance_margin):

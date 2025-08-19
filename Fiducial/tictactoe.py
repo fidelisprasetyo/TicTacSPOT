@@ -9,8 +9,8 @@ def player(board):
     X_count = sum(x.count('X') for x in board)
     O_count = sum(x.count('O') for x in board)
 
-    #return O if X_count == O_count else X      original code
-    return O if X_count > O_count else X  
+    return O if X_count == O_count else X      #original code
+    # return O if X_count > O_count else X  
 
 
 # Returns set of all possible actions (i, j) available on the board
@@ -26,7 +26,7 @@ def actions(board):
     #Old code ---> Takes in a board with id numbers + X + O
     # for i, row in enumerate(board):
     #     for j, cell in enumerate(row):
-    #         if cell is None:
+    #         if cell in EMPTY:
     #             actions.add((i, j))
 
     return actions
@@ -58,20 +58,21 @@ def winner(board):
                       [(0, 0), (1, 1), (2, 2)],
                       [(0, 2), (1, 1), (2, 0)]]
     
-    # """for wins in winning_combos:"""                
-    # X_count = 0
-    # O_count = 0
-    # for i, j in wins:
-    #     if board[i][j] == X:
-    #         X_count += 1
-    #     elif board[i][j] == O:
-    #         O_count += 1
-    #     if O_count == 3:
-    #         return O
-    #     elif X_count == 3:
-    #         return X
-    # return None 
-    # #New Code for winner function
+    """for wins in winning_combos:                
+        X_count = 0
+        O_count = 0
+        for i, j in wins:
+            if board[i][j] == X:
+                X_count += 1
+            elif board[i][j] == O:
+                O_count += 1
+        if O_count == 3:
+            return O
+        elif X_count == 3:
+            return X
+    return None 
+    """
+    #New Code for winner function
     for combo in winning_combos:
         if board[combo[0][0]][combo[0][1]] == board[combo[1][0]][combo[1][1]] == board[combo[2][0]][combo[2][1]] != None:
             return board[combo[0][0]][combo[0][1]]

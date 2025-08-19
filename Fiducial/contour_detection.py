@@ -18,7 +18,7 @@ def prepare_image_response(image_responses):
 
     return frame
 
-def convert_to_bin(frame, equalize = True, close = False, erosion = True):
+def convert_to_bin(frame, equalize = True, close = True, erosion = False):
 
     # Gaussian blur
     frame = cv2.GaussianBlur(frame, (5, 5), 0)
@@ -49,61 +49,59 @@ def compute_center(contour):
         cY = int(M["m01"] / M["m00"])
     return cX, cY
 
-# won't be used
-def draw_board(frame, grids):
-    for contour in grids:
-        cv2.drawContours(frame, [contour], -1, (125, 125, 125), 2)
+def draw_board_centers(frame, grids):
+    for grid in grids:
+        grid_px = compute_center(grid)
+        cv2.putText(frame, ".", grid_px, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+
+def draw_board(frame, contour, color = (128, 128, 128)):
+    cv2.drawContours(frame, [contour], -1, color, 2)
 
 # grid map:
-# | (2,0) | (2,1) | (2,2)
-# | (1,0) | (1,1) | (1,2)
-# | (0,0) | (0,1) | (0,2)
+# | [0,0] | [0,1] | [0,2]
+# | [1,0] | [1,1] | [1,2]
+# | [2,0] | [2,1] | [2,2]
 
 def get_grid(grids, row, col):
-    if row == 0 and len(grids) < 3:
+    """Returns tuple (contour, (x,y))"""
+    if row == 2 and len(grids) < 3:
         print(f"[Warning] Not enough grids for bottom row (found {len(grids)}).")
         return None
     elif row == 1 and len(grids) < 6:
         print(f"[Warning] Not enough grids for middle row (found {len(grids)}).")
         return None
-    elif row == 2 and len(grids) < 9:
+    elif row == 0 and len(grids) < 9:
         print(f"[Warning] Not enough grids for top row (found {len(grids)}).")
         return None
-
-    # Sort by Y descending (bottom row first)
-    y_sorted = sorted(grids, key=lambda c: compute_center(c)[1], reverse=True)
+    
+    centers_px = [(grid, compute_center(grid)) for grid in grids]
+    y_sorted = sorted(centers_px, key=lambda c: c[1][1], reverse=True)
 
     try:
         # Within each row, sort by X ascending (left to right)
-        x_sorted_bottom = sorted(y_sorted[:3], key=lambda c: compute_center(c)[0])
-        x_sorted_middle = sorted(y_sorted[3:6], key=lambda c: compute_center(c)[0])
-        x_sorted_top = sorted(y_sorted[6:9], key=lambda c: compute_center(c)[0])
+        x_sorted_bottom = sorted(y_sorted[:3], key=lambda c: c[1][0])
+        x_sorted_middle = sorted(y_sorted[3:6], key=lambda c: c[1][0])
+        x_sorted_top = sorted(y_sorted[6:9], key=lambda c: c[1][0])        
 
         if row == 0:
-            return x_sorted_bottom[col]
+            return x_sorted_top[col]
         if row == 1:
             return x_sorted_middle[col]
         if row == 2:
-            return x_sorted_top[col]
-
+            return x_sorted_bottom[col]
+        
     except IndexError:
         print(f"[Error] Column index {col} out of range for row {row}.")
         return None
-
-def draw_board_centers(frame, grids):
-    for grid in grids:
-        grid_px = compute_center(grid)
-        cv2.putText(frame, ".", grid_px, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
 
 def get_board_grids(frame, area_min = AREA_MIN):
     """Returns a list of contour of the grids (unsorted)"""
 
     rectangles = defaultdict(list)
     grids = []
+    board_outline = None
 
     bin_frame = convert_to_bin(frame)
-
-    # Find contours
     contours, hierarchy = cv2.findContours(bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     if hierarchy is not None:
@@ -121,10 +119,38 @@ def get_board_grids(frame, area_min = AREA_MIN):
 
     for parent, children in rectangles.items():
         if len(children) >= 3:
+            outline_approx = cv2.approxPolyDP(contours[parent], 0.02 * cv2.arcLength(contours[parent], True), True)
+            if len(outline_approx) == 4 and cv2.isContourConvex(outline_approx):
+                board_outline = outline_approx
             for child in children:
                 grids.append(child)
 
-    return grids
+    return grids, board_outline
+
+def get_board_outline(frame, approx_area):
+    bin_frame = convert_to_bin(frame)
+    contours, _ = cv2.findContours(bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    for _, cnt in enumerate(contours):
+        cnt_approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
+        if len(cnt_approx) == 4 and cv2.isContourConvex(cnt_approx):
+            area = cv2.contourArea(cnt_approx)
+            if area < approx_area * 1.3 and area > approx_area * 0.7:
+                return cnt_approx
+
+def detect_blobs(frame, area):
+    bin_frame = convert_to_bin(frame)
+    params = cv2.SimpleBlobDetector_Params()
+    params.filterByArea = True
+    params.minArea = area * 0.5
+    params.maxArea = area * 1.5
+    detector = cv2.SimpleBlobDetector_create(params)
+    keypoints = detector.detect(bin_frame)
+
+    # im_with_keypoints = cv2.drawKeypoints(bin_frame, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+    # cv2.imshow("Tictacspot", im_with_keypoints)
+    # cv2.waitKey(0)
+
+    return keypoints
 
 def find_circles(frame):
     circles = []
@@ -134,7 +160,7 @@ def find_circles(frame):
     for _, cnt in enumerate(contours):
         cnt_approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
         if len(cnt_approx) == 8 and cv2.isContourConvex(cnt_approx) and cv2.contourArea(cnt_approx) > 100:
-            circles.append(compute_center(cnt_approx))
+            circles.append(cnt_approx)
     return circles
 
 def is_px_inside_contour(contour, x, y):
