@@ -49,14 +49,6 @@ def compute_center(contour):
         cY = int(M["m01"] / M["m00"])
     return cX, cY
 
-def draw_board_centers(frame, grids):
-    for grid in grids:
-        grid_px = compute_center(grid)
-        cv2.putText(frame, ".", grid_px, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-
-def draw_board(frame, contour, color = (128, 128, 128)):
-    cv2.drawContours(frame, [contour], -1, color, 2)
-
 # grid map:
 # | [0,0] | [0,1] | [0,2]
 # | [1,0] | [1,1] | [1,2]
@@ -119,11 +111,11 @@ def get_board_grids(frame, area_min = AREA_MIN):
 
     for parent, children in rectangles.items():
         if len(children) >= 3:
-            outline_approx = cv2.approxPolyDP(contours[parent], 0.02 * cv2.arcLength(contours[parent], True), True)
-            if len(outline_approx) == 4 and cv2.isContourConvex(outline_approx):
-                board_outline = outline_approx
             for child in children:
                 grids.append(child)
+            if len(children) == 9:
+                outline_approx = cv2.approxPolyDP(contours[parent], 0.02 * cv2.arcLength(contours[parent], True), True)
+                board_outline = outline_approx
 
     return grids, board_outline
 
@@ -136,6 +128,7 @@ def get_board_outline(frame, approx_area):
             area = cv2.contourArea(cnt_approx)
             if area < approx_area * 1.3 and area > approx_area * 0.7:
                 return cnt_approx
+    return None
 
 def detect_blobs(frame, area):
     bin_frame = convert_to_bin(frame)
@@ -146,22 +139,7 @@ def detect_blobs(frame, area):
     detector = cv2.SimpleBlobDetector_create(params)
     keypoints = detector.detect(bin_frame)
 
-    # im_with_keypoints = cv2.drawKeypoints(bin_frame, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-    # cv2.imshow("Tictacspot", im_with_keypoints)
-    # cv2.waitKey(0)
-
     return keypoints
-
-def find_circles(frame):
-    circles = []
-    bin_frame = convert_to_bin(frame, close = False)
-    contours, _ = cv2.findContours(bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-    for _, cnt in enumerate(contours):
-        cnt_approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
-        if len(cnt_approx) == 8 and cv2.isContourConvex(cnt_approx) and cv2.contourArea(cnt_approx) > 100:
-            circles.append(cnt_approx)
-    return circles
 
 def is_px_inside_contour(contour, x, y):
     return cv2.pointPolygonTest(contour, (x, y), False) > 0
@@ -171,6 +149,15 @@ def is_x_aligned(x, x_target, threshold):
 
 def is_y_aligned(y, y_target, threshold):
     return abs(y - y_target) <= threshold
+
+def draw_board_centers(frame, grids):
+    for grid in grids:
+        grid_px = compute_center(grid)
+        cv2.putText(frame, ".", grid_px, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+def draw_board(frame, contour, color = (128, 128, 128)):
+    if contour is not None:
+        cv2.drawContours(frame, [contour], -1, color, 2)
 
 def save_debug_image(image, title="Image", filename="output.png", cmap='gray'):
     plt.figure()

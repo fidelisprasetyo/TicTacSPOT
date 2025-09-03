@@ -68,8 +68,8 @@ def get_obj_and_img(network_compute_client, server, model, confidence, image_sou
         image_full = resp.image_response
 
         # Show the image
-        cv2.imshow("Fetch", img)
-        cv2.waitKey(15)
+        cv2.imshow('X-piece detection', img)
+        cv2.waitKey(1)
 
         if len(resp.object_in_image) > 0:
             for obj in resp.object_in_image:
@@ -156,14 +156,13 @@ def find_center_px(polygon):
     return (x, y)
 
 
-PICK_UP_STATUS_FAIL = 0
-PICK_UP_STATUS_SUCCESS = 1
-PICK_UP_STATUS_NOT_FOUND = 2
+PICK_UP_STATE_FAIL = 0
+PICK_UP_STATE_SUCCESS = 1
+PICK_UP_STATE_NOT_FOUND = 2
+MAX_TRY_COUNT = 2
 
 def pick_up(options, robot):
-    
-    cv2.namedWindow("Fetch")
-    cv2.waitKey(500)
+
     # Time sync is necessary so that time-based filter requests can be converted
     robot.time_sync.wait_for_sync()
 
@@ -190,8 +189,8 @@ def pick_up(options, robot):
                 network_compute_client, _ml_service, _model,
                 confidence, kImageSources, 'X')
 
-            if try_count == 3:
-                return PICK_UP_STATUS_NOT_FOUND
+            if try_count == MAX_TRY_COUNT:
+                return PICK_UP_STATE_NOT_FOUND
 
             if X is None:
                 # Didn't find anything, keep searching.
@@ -342,7 +341,7 @@ def pick_up(options, robot):
 
                     block_until_arm_arrives(command_client, command_client.robot_command(stow), 3.0)
                     print("Failed to grab")
-                    return PICK_UP_STATUS_FAIL
+                    return PICK_UP_STATE_FAIL
                 else:
                     holding_piece = not failed       
             else:
@@ -379,7 +378,7 @@ def pick_up(options, robot):
                     
         # Wait for the stow command to finish
         time.sleep(0.25)
-        return PICK_UP_STATUS_SUCCESS
+        return PICK_UP_STATE_SUCCESS
     
 
 def compute_stand_location_and_yaw(vision_tform_target, robot_state_client, distance_margin):

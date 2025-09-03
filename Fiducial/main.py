@@ -1,26 +1,16 @@
-import cv2
-import numpy as np
 import argparse
 import time
-import math
 import tictactoe as ttt
+import cv2
 
-from contour_detection import *
 from tictacspot import TicTacSpot
 from board_visual_input import BoardVisualInput
 
 import bosdyn.client
 import bosdyn.client.lease
 import bosdyn.client.util
-import bosdyn.geometry
-from bosdyn.api import trajectory_pb2, geometry_pb2
-from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
-from bosdyn.client.frame_helpers import BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b, get_vision_tform_body
-from bosdyn.client.math_helpers import Quat
-from bosdyn.client.image import ImageClient, pixel_to_camera_space
-from bosdyn.client.robot_command import RobotCommandBuilder, RobotCommandClient, blocking_stand, block_until_arm_arrives
-from bosdyn.client.robot_state import RobotStateClient
-from bosdyn.util import seconds_to_duration
+
+PLAYER_TURN_TIME = 5
 
 def main():
     parser = argparse.ArgumentParser()
@@ -55,16 +45,30 @@ def main():
     with bosdyn.client.lease.LeaseKeepAlive(lease_client, must_acquire=True, return_at_exit=True):
         
         spot = TicTacSpot(robot, options)
+        board = BoardVisualInput()
+        player_turn = ttt.O
+        spot_turn = ttt.X
+
         spot.power_on()
         spot.stand()
 
+        # spot.find_board()
+        # spot.place(1,0)
+        # spot.go_to_initial()
+
+        cv2.namedWindow('Tictacspot', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Tictacspot', 512, 384)
+        cv2.moveWindow("Tictacspot", 500, 0)
+
+        cv2.namedWindow('Tic-tac-toe', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Tic-tac-toe', 512, 512)
+        cv2.moveWindow('Tic-tac-toe', 500, 828)
+
+        cv2.namedWindow('X-piece detection', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('X-piece detection', 512, 384)
+        cv2.moveWindow('X-piece detection', 500, 414)
+
         spot.find_board()
-
-
-        # Tic Tac Toe
-        player_turn = ttt.O
-        spot_turn = ttt.X
-        board = BoardVisualInput()
         board.print()
 
         empty_grid_count = board.get_empty_grid_count()
@@ -88,8 +92,10 @@ def main():
             if current_turn == player_turn:
                 print("Player's turn!")
                 spot.stand()
-                time.sleep(5) # time based check
-
+                for i in range(PLAYER_TURN_TIME, 0, -1):
+                    print(f"Waiting... {i} seconds remaining", end = '\r')
+                    time.sleep(1)
+                print("Checking the board for changes...")
                 occupancy_grid = spot.get_board_occupancy()
                 move = board.check_board_changes(occupancy_grid)
 
