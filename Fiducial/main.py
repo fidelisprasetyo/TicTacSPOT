@@ -1,10 +1,10 @@
 import argparse
-import time
 import tictactoe as ttt
 import cv2
+import time
 
 from tictacspot import TicTacSpot
-from board_visual_input import BoardVisualInput
+from board_input import BoardVisualInput
 
 import bosdyn.client
 import bosdyn.client.lease
@@ -53,7 +53,7 @@ def main():
         spot.stand()
 
         # spot.find_board()
-        # spot.place(1,0)
+        # spot.place(1,2)
         # spot.go_to_initial()
 
         cv2.namedWindow('Tictacspot', cv2.WINDOW_NORMAL)
@@ -79,9 +79,11 @@ def main():
                 piece = ttt.winner(board.get_board_state())
                 if piece == ttt.X:
                     print("Spot wins")
+                    board.print()
                     break
                 elif piece == ttt.O:
                     print("Player wins")
+                    board.print()
                     break
             
             if empty_grid_count % 2 == 0:
@@ -122,6 +124,7 @@ def main():
 
         if piece == None:
             print("Draw!")
+            board.print()
 
         spot.power_off()
 

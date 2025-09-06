@@ -11,11 +11,11 @@ from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.client.math_helpers import Quat
 from bosdyn.api.geometry_pb2 import SE2Velocity, SE2VelocityLimit, Vec2
 
-from contour_detection import *
+from contour import *
 from fetch_only_pickup import PICK_UP_STATE_SUCCESS, PICK_UP_STATE_FAIL, PICK_UP_STATE_NOT_FOUND
 import fetch_only_pickup as fetch
 
-ARM_BOARD_GAZE_OFFSET = 0.15
+ARM_BOARD_GAZE_OFFSET = 0.20
 TOLERANCE = 50
 BODY_HEIGHT = 0.3
 FORCE_THRESHOLD = 15
@@ -73,12 +73,19 @@ class TicTacSpot:
                 if is_x_aligned(x, self.cx, TOLERANCE):
                     if is_y_aligned(y, self.cy, TOLERANCE):
                         print(f"[Detected grids: {grid_count}], Board is found and aligned!")
+
                         self.initial_coord = self.get_robot_coordinates()
                         self.best_view_roll = roll
                         self.board_outline = board_outline
                         self.average_grid_area = self._grid_avg_area(board_grids)
                         self.virtual_board = self._sort_board_grids(board_grids)
                         self.board_world_coord = self._get_board_world_coords(image_responses, self.virtual_board, ARM_BOARD_GAZE_OFFSET)
+                        
+                        occupancy_grid = self.get_board_occupancy()
+                        if not self._is_board_empty(occupancy_grid):
+                            print("Board is not empty, clear the board first!")
+                            continue
+
                         if self.board_world_coord is not None and self.board_outline is not None:
                             is_board_found = True
                             self.stand()
@@ -144,7 +151,7 @@ class TicTacSpot:
         time.sleep(1)
 
         while self._is_pushing_under_threshold(FORCE_THRESHOLD):
-            self.arm_push(duration = .25, v_r= .05)
+            self.arm_push(duration = .25, v_r= .3)
             time.sleep(.25)
 
         print("Touched the board! Release the grip")
@@ -158,21 +165,27 @@ class TicTacSpot:
 
     def get_board_occupancy(self):
         """Returns a 2d matrix of occupied grids. Also re-aligns the virtual board position if Spot shifts from the initial position."""
+        
+        virtual_board = [[None for _ in range(3)] for _ in range(3)]
+        cur_board_outline = None
+
         self.go_to_initial()
         self.adjust_roll(self.best_view_roll, duration = 1, body_height=BODY_HEIGHT)
 
-        image_response = self.image_client.get_image_from_sources(["left_fisheye_image"])
-        gray_frame = cv2.imdecode(np.frombuffer(image_response[0].shot.image.data, dtype=np.uint8), -1)
-
-        ### --- for visualization ----
-        visual_frame = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2BGR)
-        ### --------------------------
-
-        virtual_board = [[None for _ in range(3)] for _ in range(3)]
-        cur_board_outline = get_board_outline(gray_frame, approx_area = cv2.contourArea(self.board_outline))
-        if cur_board_outline is None:
+        
+        while cur_board_outline is None:
             print("Failed to detect board outline, try again...")
-            self.get_board_occupancy()
+            image_response = self.image_client.get_image_from_sources(["left_fisheye_image"])
+            gray_frame = cv2.imdecode(np.frombuffer(image_response[0].shot.image.data, dtype=np.uint8), -1)
+            cur_board_outline = get_board_outline(gray_frame, approx_area = cv2.contourArea(self.board_outline))
+
+            ### --- for visualization ----
+            visual_frame = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2BGR)
+            draw_board(visual_frame, self.board_outline, color = (0, 0, 255))
+            cv2.imshow('Tictacspot', visual_frame)
+            cv2.waitKey(1)
+            ### --------------------------
+        
             
         prev_outline = np.array(self.board_outline, dtype=np.float32)
         cur_outline = np.array(cur_board_outline, dtype=np.float32)
@@ -342,7 +355,7 @@ class TicTacSpot:
             current_time = time.time()
             self.command_client.robot_command(command = cmd, end_time_secs = time.time() + end_time)
     
-    def arm_stow(self, timeout_sec = 3.0):
+    def arm_stow(self, timeout_sec = 1):
         stow = RobotCommandBuilder.arm_stow_command()
         stow_command_id = self.command_client.robot_command(stow)
         block_until_arm_arrives(self.command_client, stow_command_id, timeout_sec)
@@ -363,8 +376,10 @@ class TicTacSpot:
         synchro_command = RobotCommandBuilder.build_synchro_command(arm_command, follow_arm_command)
         command_id = self.command_client.robot_command(synchro_command)
         block_until_arm_arrives(self.command_client, command_id, timeout_sec)
+        self.command_client.robot_command(RobotCommandBuilder.stop_command())
 
     def arm_push(self, duration, v_r):
+        
         cylindrical_velocity = arm_command_pb2.ArmVelocityCommand.CylindricalVelocity()
         cylindrical_velocity.linear_velocity.r = v_r
         cylindrical_velocity.linear_velocity.theta = 0
@@ -379,13 +394,14 @@ class TicTacSpot:
 
         self.command_client.robot_command(command=robot_command, end_time_secs=time.time() + duration)
 
-    def gripper_open(self, timeout_sec = 3):
+
+    def gripper_open(self, timeout_sec = 1):
         print("Open gripper")
         gripper_command = RobotCommandBuilder.claw_gripper_open_command()
         command_id = self.command_client.robot_command(gripper_command)
         block_until_arm_arrives(self.command_client, command_id, timeout_sec)
     
-    def gripper_close(self, timeout_sec = 3):
+    def gripper_close(self, timeout_sec = 1):
         gripper_command = RobotCommandBuilder.claw_gripper_close_command()
         command_id = self.command_client.robot_command(gripper_command)
         block_until_arm_arrives(self.command_client, command_id, timeout_sec)
@@ -417,6 +433,12 @@ class TicTacSpot:
                 abs(current_state.y - y) < epsilon and
                 abs(current_angle - yaw) < 0.025) 
 
+    def _is_board_empty(self, occupancy_grid):
+        for row_idx, row in enumerate(occupancy_grid):
+            for col_idx, grid_occupance in enumerate(row):
+                if grid_occupance == 1:
+                    return False
+        return True
 
     ### Setters & Getters
 
@@ -429,7 +451,7 @@ class TicTacSpot:
         # Default body control settings
         body_control = self._set_default_body_control()
         speed_limit = SE2VelocityLimit(max_vel=SE2Velocity(
-            linear=Vec2(x=0.5, y=0.5), angular=1))
+            linear=Vec2(x=0.25, y=0.25), angular=1))
 
         mobility_params = spot_command_pb2.MobilityParams(
             obstacle_params=obstacles, vel_limit=speed_limit, body_control=body_control,
