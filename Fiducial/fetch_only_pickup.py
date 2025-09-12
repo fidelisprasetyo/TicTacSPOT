@@ -57,8 +57,21 @@ def get_obj_and_img(network_compute_client, server, model, confidence, image_sou
         # Pack and send the request.
         process_img_req = network_compute_bridge_pb2.NetworkComputeRequest(
             input_data=input_data, server_config=server_data)
-
+        
         resp = network_compute_client.network_compute_bridge_command(process_img_req)
+
+        # for attempt in range(2):
+        #     try:
+        #         resp = network_compute_client.network_compute_bridge_command(process_img_req)
+        #         if resp.status != network_compute_bridge_pb2.NetworkComputeStatus.STATUS_UNKNOWN:
+        #             break
+        #         print(f"Retry {attempt +1}] got UUNKNOWN status")
+        #     except Exception as e:
+        #         print(f"Retry {attempt + 1} Exception during network computer: {e}")
+            
+        #     time.sleep(0.5)
+        # else:
+        #     raise RuntimeError("Detection failed after 2 attempts")
 
         best_obj = None
         highest_conf = 0.0

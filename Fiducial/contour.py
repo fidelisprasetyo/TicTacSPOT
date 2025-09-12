@@ -87,7 +87,7 @@ def get_grid(grids, row, col):
         return None
 
 def get_board_grids(frame, area_min = AREA_MIN):
-    """Returns a list of contour of the grids (unsorted)"""
+    """Returns a list of contour of the grids (unsorted) and the contour of board outline"""
 
     rectangles = defaultdict(list)
     grids = []
@@ -129,13 +129,14 @@ def get_board_outline(frame, approx_area):
             if area < approx_area * 1.3 and area > approx_area * 0.7:
                 return cnt_approx
     return None
+    
 
 def detect_blobs(frame, area):
     bin_frame = convert_to_bin(frame)
     params = cv2.SimpleBlobDetector_Params()
     params.filterByArea = True
-    params.minArea = area * 0.5
-    params.maxArea = area * 1.5
+    params.minArea = area * 0.3
+    params.maxArea = area * 1.7
     detector = cv2.SimpleBlobDetector_create(params)
     keypoints = detector.detect(bin_frame)
 

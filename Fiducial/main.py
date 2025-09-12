@@ -4,14 +4,14 @@ import cv2
 import time
 
 from tictacspot import TicTacSpot
-from board_input import BoardVisualInput
+from board_input import BoardInput
+from board_input import OCCUPANCE_MULTIPLE_MOVES_ERROR
 
 import bosdyn.client
 import bosdyn.client.lease
 import bosdyn.client.util
 
 PLAYER_TURN_TIME = 5
-
 def main():
     parser = argparse.ArgumentParser()
     bosdyn.client.util.add_base_arguments(parser)
@@ -31,6 +31,8 @@ def main():
     parser.add_argument('--avoid-obstacles', default=False, type=lambda x:
                         (str(x).lower() == 'true'),
                         help='If the robot should have obstacle avoidance enabled.')
+    parser.add_argument('--first', choices=['player', 'spot'], default='player',
+                        help='Who goes first: player (O) or spot (X)')
     options = parser.parse_args()
 
     sdk = bosdyn.client.create_standard_sdk('TicTacSPOT')
@@ -45,33 +47,39 @@ def main():
     with bosdyn.client.lease.LeaseKeepAlive(lease_client, must_acquire=True, return_at_exit=True):
         
         spot = TicTacSpot(robot, options)
-        board = BoardVisualInput()
+        board = BoardInput()
         player_turn = ttt.O
         spot_turn = ttt.X
+
+        if options.first == 'player':
+            ttt.START_PLAYER = player_turn
+        else:
+            ttt.START_PLAYER = spot_turn
 
         spot.power_on()
         spot.stand()
 
-        # spot.find_board()
-        # spot.place(1,2)
-        # spot.go_to_initial()
-
         cv2.namedWindow('Tictacspot', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Tictacspot', 512, 384)
+        cv2.resizeWindow('Tictacspot', 640, 480)
         cv2.moveWindow("Tictacspot", 500, 0)
 
-        cv2.namedWindow('Tic-tac-toe', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Tic-tac-toe', 512, 512)
-        cv2.moveWindow('Tic-tac-toe', 500, 828)
+        cv2.namedWindow('Tictacspot_bin', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Tictacspot_bin', 640, 480)
+        cv2.moveWindow("Tictacspot_bin", 1140, 0)
 
         cv2.namedWindow('X-piece detection', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('X-piece detection', 512, 384)
-        cv2.moveWindow('X-piece detection', 500, 414)
+        cv2.resizeWindow('X-piece detection', 480, 360)
+        cv2.moveWindow('X-piece detection', 500, 510)
+
+        cv2.namedWindow('Tic-tac-toe', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Tic-tac-toe', 480, 480)
+        cv2.moveWindow('Tic-tac-toe', 500, 900)
 
         spot.find_board()
         board.print()
 
         empty_grid_count = board.get_empty_grid_count()
+        move_number = 0
 
         while empty_grid_count > 0:
 
@@ -85,11 +93,11 @@ def main():
                     print("Player wins")
                     board.print()
                     break
-            
-            if empty_grid_count % 2 == 0:
-                current_turn = spot_turn
+
+            if move_number % 2 == 0:
+                current_turn = player_turn if options.first == 'player' else spot_turn
             else:
-                current_turn = player_turn
+                current_turn = spot_turn if options.first == 'player' else player_turn
             
             if current_turn == player_turn:
                 print("Player's turn!")
@@ -108,18 +116,40 @@ def main():
                 
             else:
                 print("Spot's turn!")
-                move, _ = ttt.minimax(board.get_board_state())
+                move = ttt.minimax(board.get_board_state())
                 row, col = move
 
                 spot.pick_up()
                 spot.place(row, col)
+
+                occupancy_grid = spot.get_board_occupancy()
+                move_detected = board.check_board_changes(occupancy_grid)
+
+                try_count = 0
+                while move_detected == OCCUPANCE_MULTIPLE_MOVES_ERROR:
+                    if try_count == 3:
+                        print("[ERROR] Multiple detections error, stopping the game.")
+                        break
+                    occupancy_grid = spot.get_board_occupancy()
+                    move_detected = board.check_board_changes(occupancy_grid)
+                    try_count += 1
+
+                if move_detected is None:
+                    print(f"Spot failed to place an X-piece at {move}, try again.")
+                    continue
                 
+                if move_detected != move:
+                    print(f"[ERROR] Spot's move = {move}, detected move = {move_detected}, stopping the game.")
+                    time.sleep(5)
+                    break
+
                 print(f"Spot's move: {move}")
                 board.update_board(move, current_turn)
                 board.print()
 
                 spot.go_to_initial()
             
+            move_number += 1
             empty_grid_count = board.get_empty_grid_count()
 
         if piece == None:
@@ -127,70 +157,6 @@ def main():
             board.print()
 
         spot.power_off()
-
-    
-
-
-
-
-
-
-    ### for testing purposes
-
-    # def area_dif(area1, area2):
-    #     return abs(area1 - area2) < 200
-
-    # image_client = robot.ensure_client(ImageClient.default_service_name)
-    # while True:
-    #     image_responses = image_client.get_image_from_sources(["left_depth_in_visual_frame", "left_fisheye_image"])
-
-    #     cv_visual = cv2.imdecode(np.frombuffer(image_responses[1].shot.image.data, dtype=np.uint8), -1)
-    #     bin_img = convert_to_bin(cv_visual)
-
-
-    #     params = cv2.SimpleBlobDetector_Params()
-    #     detector = cv2.SimpleBlobDetector_create(params)
-    #     keypoints = detector.detect(bin_img)
-    #     # Draw detected blobs as red circles.
-    #     # cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS ensures the size of the circle corresponds to the size of blob
-    #     im_with_keypoints = cv2.drawKeypoints(bin_img, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-
-
-
-        # rectangles = defaultdict(list)
-        # grids = []
-        # # Find contours
-        # contours, hierarchy = cv2.findContours(bin_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-        # if hierarchy is not None:
-        #     for idx, cnt in enumerate(contours):
-        #         parent = hierarchy[0][idx][3]
-        #         if parent == -1:
-        #             continue
-        #         cnt_approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
-
-        #         # filter out non-rectangles
-        #         if len(cnt_approx) == 4 and cv2.isContourConvex(cnt_approx):
-        #             area = cv2.contourArea(cnt_approx)
-        #             if area_dif(area, 2277):
-        #                 rectangles[parent].append(cnt_approx)
-
-        # for parent, children in rectangles.items():
-        #     if len(children) >= 3:
-        #         for child in children:
-        #             grids.append(child)
-
-
-        # for grid in grids:
-        #     draw_board_centers(bin_img, grid)
-
-
-
-    #     cv2.imshow("Tictacspot", im_with_keypoints)
-
-    #     if cv2.waitKey(1) & 0xFF == ord('q'):
-    #         break
-    # cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':

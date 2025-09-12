@@ -1,7 +1,9 @@
 import numpy as np
 import cv2
 
-class BoardVisualInput:
+OCCUPANCE_MULTIPLE_MOVES_ERROR = -1
+
+class BoardInput:
 
     def __init__(self):
         self.board_state = [
@@ -66,7 +68,7 @@ class BoardVisualInput:
             return None
         else:
             print(f"Warning: Multiple moves detected: {change} or the board was obstructed.")
-            return None
+            return OCCUPANCE_MULTIPLE_MOVES_ERROR
 
     def update_board(self, move, player):
         self.board_state[move[0]][move[1]] = player

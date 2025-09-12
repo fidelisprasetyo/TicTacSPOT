@@ -3,14 +3,18 @@ import copy
 
 X = "X"
 O = "O" 
+START_PLAYER = O
 
 # Returns player who has the next turn on a board
 def player(board):
     X_count = sum(x.count('X') for x in board)
     O_count = sum(x.count('O') for x in board)
 
-    return O if X_count == O_count else X      #original code
-    # return O if X_count > O_count else X  
+    # If the starting player is X
+    if START_PLAYER == X:
+        return X if X_count == O_count else O
+    else:  # Starting player is O
+        return O if X_count == O_count else X
 
 
 # Returns set of all possible actions (i, j) available on the board
@@ -21,13 +25,6 @@ def actions(board):
         for j, cell in enumerate(row):
             if cell != "X" and cell != "O":
                 actions.add((i, j))
-
-
-    #Old code ---> Takes in a board with id numbers + X + O
-    # for i, row in enumerate(board):
-    #     for j, cell in enumerate(row):
-    #         if cell in EMPTY:
-    #             actions.add((i, j))
 
     return actions
 
@@ -58,20 +55,6 @@ def winner(board):
                       [(0, 0), (1, 1), (2, 2)],
                       [(0, 2), (1, 1), (2, 0)]]
     
-    """for wins in winning_combos:                
-        X_count = 0
-        O_count = 0
-        for i, j in wins:
-            if board[i][j] == X:
-                X_count += 1
-            elif board[i][j] == O:
-                O_count += 1
-        if O_count == 3:
-            return O
-        elif X_count == 3:
-            return X
-    return None 
-    """
     #New Code for winner function
     for combo in winning_combos:
         if board[combo[0][0]][combo[0][1]] == board[combo[1][0]][combo[1][1]] == board[combo[2][0]][combo[2][1]] != None:
@@ -93,35 +76,7 @@ def utility(board):
         return -1
     else:
         return 0
-# Returns the optimal action for the current player on the board
-def minimax(board):
-    optimal_action = None
-    alpha = -math.inf
-    beta = math.inf
-    
-    if terminal(board):
-        return utility(board)
-    
-    if player(board) == X:
-        bestScore = -math.inf
-        
-        for action in actions(board):
-            score = minScore(result(board, action), alpha, beta)
-            if bestScore < score:
-                bestScore = score
-                optimal_action = action
-        return optimal_action, board[optimal_action[0]][optimal_action[1]]
-    else:
-        bestScore = math.inf
-        
-        for action in actions(board):
-            score = maxScore(result(board, action), alpha, beta)
-            
-            if bestScore > score:
-                bestScore = score
-                optimal_action = action
-        return optimal_action, board[optimal_action[0]][optimal_action[1]]
-"""
+
 #New minimax function
 def minimax(board):
     current_player = player(board)
@@ -130,24 +85,7 @@ def minimax(board):
     else:
         value, move = minScore(board, -math.inf, math.inf)
     return move
-"""
-def maxScore(board, alpha, beta):
-    if terminal(board):
-        return utility(board)
-    
-    bestScore = -math.inf
-    
-    for action in actions(board):
-        score = minScore(result(board, action), alpha, beta)
-        bestScore = max(score, bestScore)
-        
-        alpha = max(alpha, bestScore)
-        
-        if beta <= alpha:
-            break
-    
-    return bestScore
-"""
+
 #New maxScore function
 def maxScore(board, alpha, beta):
     if terminal(board):
@@ -164,24 +102,6 @@ def maxScore(board, alpha, beta):
             break
     return bestScore, optimal_action
 
-"""
-def minScore(board, alpha, beta):
-    if terminal(board):
-        return utility(board)
-    
-    bestScore = math.inf
-    
-    for action in actions(board):
-        score = maxScore(result(board, action), alpha, beta)
-        bestScore = min(score, bestScore)
-        
-        beta = min(beta, bestScore)
-        
-        if beta <= alpha:
-            break
-
-    return bestScore
-"""
 #New minScore function
 def minScore(board, alpha, beta):
     if terminal(board):
@@ -197,4 +117,16 @@ def minScore(board, alpha, beta):
         if beta <= alpha:
             break
     return bestScore, optimal_action
-"""
+
+# for debugging
+if __name__ == '__main__':
+        
+    test_board = [
+        [None, 'X', 'O'],
+        [None, 'O', 'X'],
+        [None, None, None]
+    ]
+
+    move = minimax(test_board)
+
+    print(move)
