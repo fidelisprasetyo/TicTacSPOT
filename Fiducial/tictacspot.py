@@ -15,13 +15,13 @@ from contour import *
 from fetch_only_pickup import PICK_UP_STATE_SUCCESS, PICK_UP_STATE_FAIL, PICK_UP_STATE_NOT_FOUND
 import fetch_only_pickup as fetch
 
-ARM_BOARD_GAZE_OFFSET = 0.2
+ARM_BOARD_OFFSET_DISTANCE = 0.25
 TOLERANCE = 50
 BODY_HEIGHT = 0.3
 FORCE_THRESHOLD = 15
-Y_BOTTOM_OFFSET = 8
-Y_MIDDLE_OFFSET = 10
-Y_TOP_OFFSET = 12
+Y_BOTTOM_OFFSET = 10
+Y_MIDDLE_OFFSET = 12
+Y_TOP_OFFSET = 15
 
 class TicTacSpot:
 
@@ -38,6 +38,7 @@ class TicTacSpot:
         self.board_world_coord = None
         self.virtual_board = None
         self.board_outline = None
+        self.visual_frame = None
 
         _image_responses = self.image_client.get_image_from_sources(["left_fisheye_image"])
         self.cx, self.cy = (_image_responses[0].shot.image.cols/2, _image_responses[0].shot.image.rows/2)
@@ -61,14 +62,15 @@ class TicTacSpot:
             bin_frame = convert_to_bin(gray_frame)
             board_grids, board_outline = get_board_grids(gray_frame)
             
-            ### --- for visualization ----
+            ### --- for visualization & debugging ----
             visual_frame = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2BGR)
             draw_board_centers(visual_frame, board_grids)
             draw_board(visual_frame, board_outline, color = (0,0,255))
+            self.visual_frame = visual_frame
             cv2.imshow('Tictacspot', visual_frame)
             cv2.imshow('Tictacspot_bin', bin_frame)
             cv2.waitKey(1)
-            ### --------------------------
+            ### --------------------------------------
 
             grid_count = len(board_grids)
             if grid_count == 9:
@@ -83,7 +85,7 @@ class TicTacSpot:
                         self.board_outline = board_outline
                         self.average_grid_area = self._grid_avg_area(board_grids)
                         self.virtual_board = self._sort_board_grids(board_grids)
-                        self.board_world_coord = self._get_board_world_coords(image_responses, self.virtual_board, ARM_BOARD_GAZE_OFFSET)
+                        self.board_world_coord = self._get_board_world_coords(image_responses, self.virtual_board, ARM_BOARD_OFFSET_DISTANCE)
                         
                         occupancy_grid = self.get_board_occupancy()
                         if not self._is_board_empty(occupancy_grid):
@@ -171,11 +173,10 @@ class TicTacSpot:
         self.gripper_close()
         time.sleep(.5)
 
-
     def get_board_occupancy(self):
         """Returns a 2d matrix of occupied grids. Also re-aligns the virtual board position if Spot shifts from the initial position."""
         
-        virtual_board = [[None for _ in range(3)] for _ in range(3)]
+        virtual_board = []
         cur_board_outline = None
 
         self.go_to_initial()
@@ -188,13 +189,13 @@ class TicTacSpot:
             bin_frame = convert_to_bin(gray_frame)
             cur_board_outline = get_board_outline(gray_frame, approx_area = cv2.contourArea(self.board_outline))
 
-            ### --- for visualization ----
+            ### --- for visualization & debugging ----
             visual_frame = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2BGR)
             draw_board(visual_frame, self.board_outline, color = (0, 0, 255))
             cv2.imshow('Tictacspot', visual_frame)
             cv2.imshow('Tictacspot_bin', bin_frame)
             cv2.waitKey(1)
-            ### --------------------------
+            ### --------------------------------------
         
             
         prev_outline = np.array(self.board_outline, dtype=np.float32)
@@ -207,31 +208,36 @@ class TicTacSpot:
                 contour = np.array(contour, dtype=np.float32).reshape(-1, 1, 2)
                 contour = cv2.perspectiveTransform(contour, H)
                 contour = contour.astype(np.int32)
-                virtual_board[row_idx][col_idx] = contour
+                virtual_board.append(contour)  ## unsorted, it works but ocassionally the transformation will mess up the ordering
 
-                ### --- for visualization ----
+                ### --- for visualization & debugging ----
                 draw_board(visual_frame, contour, color= (255,0,0))
-                ### --------------------------
+                ### --------------------------------------
+
+        virtual_board = self._sort_board_grids(virtual_board) ## re-sort the transformed contours
 
         occupancy_grid = np.ones((3,3))
         blobs = detect_blobs(gray_frame, self.average_grid_area)
         for row_idx, row in enumerate(virtual_board):
-            for col_idx, contour in enumerate(row):
+            for col_idx, grid in enumerate(row):
+                contour, _ = grid
                 for blob in blobs:
                     (x,y) = blob.pt
                     if is_px_inside_contour(contour, x, y):
                         occupancy_grid[row_idx][col_idx] = 0
                         break
         
-        ### --- for visualization ----
+        ### --- for visualization & debugging ----
         draw_board(visual_frame, cur_board_outline, color = (255, 0, 0))
         draw_board(visual_frame, self.board_outline, color = (0, 0, 255))
         visual_frame = cv2.drawKeypoints(visual_frame, blobs, np.array([]), (255,255,0), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         cv2.imshow('Tictacspot', visual_frame)
         cv2.imshow('Tictacspot_bin', bin_frame)
         cv2.waitKey(1)
-        ### --------------------------
-        
+        self.visual_frame = visual_frame
+        ### --------------------------------------
+
+        print("Occupancy grid:\n", occupancy_grid)
         return occupancy_grid
 
 
@@ -407,7 +413,6 @@ class TicTacSpot:
 
         self.command_client.robot_command(command=robot_command, end_time_secs=time.time() + duration)
 
-
     def gripper_open(self, timeout_sec = 1):
         print("Open gripper")
         gripper_command = RobotCommandBuilder.claw_gripper_open_command()
@@ -452,6 +457,9 @@ class TicTacSpot:
                 if grid_occupance == 1:
                     return False
         return True
+
+    def save_img_log(self):
+        cv2.imwrite('./log/err_log.jpg', self.visual_frame)
 
     ### Setters & Getters
 

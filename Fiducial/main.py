@@ -109,7 +109,7 @@ def main():
                 occupancy_grid = spot.get_board_occupancy()
                 move = board.check_board_changes(occupancy_grid)
 
-                if move:
+                if move and move != OCCUPANCE_MULTIPLE_MOVES_ERROR:
                     print(f"Player's move: {move}")
                     board.update_board(move, current_turn)
                     board.print()
@@ -127,7 +127,7 @@ def main():
 
                 try_count = 0
                 while move_detected == OCCUPANCE_MULTIPLE_MOVES_ERROR:
-                    if try_count == 3:
+                    if try_count == 5:
                         print("[ERROR] Multiple detections error, stopping the game.")
                         break
                     occupancy_grid = spot.get_board_occupancy()
@@ -140,6 +140,7 @@ def main():
                 
                 if move_detected != move:
                     print(f"[ERROR] Spot's move = {move}, detected move = {move_detected}, stopping the game.")
+                    spot.save_img_log()
                     time.sleep(5)
                     break
 
