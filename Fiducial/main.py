@@ -47,117 +47,123 @@ def main():
     with bosdyn.client.lease.LeaseKeepAlive(lease_client, must_acquire=True, return_at_exit=True):
         
         spot = TicTacSpot(robot, options)
-        board = BoardInput()
-        player_turn = ttt.O
-        spot_turn = ttt.X
-
-        if options.first == 'player':
-            ttt.START_PLAYER = player_turn
-        else:
-            ttt.START_PLAYER = spot_turn
-
         spot.power_on()
         spot.stand()
+        spot.pick_up()
+        # board = BoardInput()
+        # player_turn = ttt.O
+        # spot_turn = ttt.X
 
-        cv2.namedWindow('Tictacspot', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Tictacspot', 640, 480)
-        cv2.moveWindow("Tictacspot", 500, 0)
+        # if options.first == 'player':
+        #     ttt.START_PLAYER = player_turn
+        # else:
+        #     ttt.START_PLAYER = spot_turn
 
-        cv2.namedWindow('Tictacspot_bin', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Tictacspot_bin', 640, 480)
-        cv2.moveWindow("Tictacspot_bin", 1140, 0)
+        # spot.power_on()
+        # spot.stand()
 
-        cv2.namedWindow('X-piece detection', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('X-piece detection', 480, 360)
-        cv2.moveWindow('X-piece detection', 500, 510)
+        # cv2.namedWindow('Tictacspot', cv2.WINDOW_NORMAL)
+        # cv2.resizeWindow('Tictacspot', 640, 480)
+        # cv2.moveWindow("Tictacspot", 500, 0)
 
-        cv2.namedWindow('Tic-tac-toe', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Tic-tac-toe', 480, 480)
-        cv2.moveWindow('Tic-tac-toe', 500, 900)
+        # cv2.namedWindow('Tictacspot_bin', cv2.WINDOW_NORMAL)
+        # cv2.resizeWindow('Tictacspot_bin', 640, 480)
+        # cv2.moveWindow("Tictacspot_bin", 1140, 0)
 
-        spot.find_board()
-        board.print()
+        # cv2.namedWindow('X-piece detection', cv2.WINDOW_NORMAL)
+        # cv2.resizeWindow('X-piece detection', 480, 360)
+        # cv2.moveWindow('X-piece detection', 500, 510)
 
-        empty_grid_count = board.get_empty_grid_count()
-        move_number = 0
+        # cv2.namedWindow('Tic-tac-toe', cv2.WINDOW_NORMAL)
+        # cv2.resizeWindow('Tic-tac-toe', 480, 480)
+        # cv2.moveWindow('Tic-tac-toe', 500, 900)
 
-        while empty_grid_count > 0:
+        # spot.find_board()
+        # board.print()
 
-            if empty_grid_count <= 4:
-                piece = ttt.winner(board.get_board_state())
-                if piece == ttt.X:
-                    print("Spot wins")
-                    board.print()
-                    break
-                elif piece == ttt.O:
-                    print("Player wins")
-                    board.print()
-                    break
+        # empty_grid_count = board.get_empty_grid_count()
+        # move_number = 0
 
-            if move_number % 2 == 0:
-                current_turn = player_turn if options.first == 'player' else spot_turn
-            else:
-                current_turn = spot_turn if options.first == 'player' else player_turn
+        # while empty_grid_count > 0:
+
+        #     if empty_grid_count <= 4:
+        #         piece = ttt.winner(board.get_board_state())
+        #         if piece == ttt.X:
+        #             print("Spot wins")
+        #             board.print()
+        #             break
+        #         elif piece == ttt.O:
+        #             print("Player wins")
+        #             board.print()
+        #             break
+
+        #     if move_number % 2 == 0:
+        #         current_turn = player_turn if options.first == 'player' else spot_turn
+        #     else:
+        #         current_turn = spot_turn if options.first == 'player' else player_turn
             
-            if current_turn == player_turn:
-                print("Player's turn!")
-                spot.stand()
-                for i in range(PLAYER_TURN_TIME, 0, -1):
-                    print(f"Waiting... {i} seconds remaining", end = '\r')
-                    time.sleep(1)
-                print("Checking the board for changes...")
-                occupancy_grid = spot.get_board_occupancy()
-                move = board.check_board_changes(occupancy_grid)
+        #     if current_turn == player_turn:
+        #         print("Player's turn!")
+        #         spot.stand()
+        #         for i in range(PLAYER_TURN_TIME, 0, -1):
+        #             print(f"Waiting... {i} seconds remaining", end = '\r')
+        #             time.sleep(1)
+        #         print("Checking the board for changes...")
+        #         occupancy_grid = spot.get_board_occupancy()
+        #         move = board.check_board_changes(occupancy_grid)
 
-                if move and move != OCCUPANCE_MULTIPLE_MOVES_ERROR:
-                    print(f"Player's move: {move}")
-                    board.update_board(move, current_turn)
-                    board.print()
+        #         if move and move != OCCUPANCE_MULTIPLE_MOVES_ERROR:
+        #             print(f"Player's move: {move}")
+        #             board.update_board(move, current_turn)
+        #             board.print()
                 
-            else:
-                print("Spot's turn!")
-                move = ttt.minimax(board.get_board_state())
-                row, col = move
-
-                spot.pick_up()
-                spot.place(row, col)
-
-                occupancy_grid = spot.get_board_occupancy()
-                move_detected = board.check_board_changes(occupancy_grid)
-
-                try_count = 0
-                while move_detected == OCCUPANCE_MULTIPLE_MOVES_ERROR:
-                    if try_count == 5:
-                        print("[ERROR] Multiple detections error, stopping the game.")
-                        break
-                    occupancy_grid = spot.get_board_occupancy()
-                    move_detected = board.check_board_changes(occupancy_grid)
-                    try_count += 1
-
-                if move_detected is None:
-                    print(f"Spot failed to place an X-piece at {move}, try again.")
-                    continue
+        #         if move == None:
+        #             continue
                 
-                if move_detected != move:
-                    print(f"[ERROR] Spot's move = {move}, detected move = {move_detected}, stopping the game.")
-                    spot.save_img_log()
-                    time.sleep(5)
-                    break
+        #     else:
+        #         print("Spot's turn!")
+        #         move = ttt.minimax(board.get_board_state())
+        #         row, col = move
 
-                print(f"Spot's move: {move}")
-                board.update_board(move, current_turn)
-                board.print()
+        #         spot.pick_up()
+        #         spot.place(row, col)
 
-                spot.go_to_initial()
+        #         occupancy_grid = spot.get_board_occupancy()
+        #         move_detected = board.check_board_changes(occupancy_grid)
+
+        #         try_count = 0
+        #         while move_detected == OCCUPANCE_MULTIPLE_MOVES_ERROR:
+        #             if try_count == 5:
+        #                 print("[ERROR] Multiple detections error, stopping the game.")
+        #                 break
+        #             occupancy_grid = spot.get_board_occupancy()
+        #             move_detected = board.check_board_changes(occupancy_grid)
+        #             try_count += 1
+
+        #         if move_detected is None:
+        #             print(f"Spot failed to place an X-piece at {move}, try again.")
+        #             continue
+                
+        #         if move_detected != move:
+        #             print(f"[ERROR] Spot's move = {move}, detected move = {move_detected}, stopping the game.")
+        #             spot.save_img_log()
+        #             time.sleep(5)
+        #             break
+
+        #         print(f"Spot's move: {move}")
+        #         board.update_board(move, current_turn)
+        #         board.print()
+
+        #         spot.go_to_initial()
             
-            move_number += 1
-            empty_grid_count = board.get_empty_grid_count()
+        #     move_number += 1
+        #     empty_grid_count = board.get_empty_grid_count()
 
-        if piece == None:
-            print("Draw!")
-            board.print()
+        # if piece == None:
+        #     print("Draw!")
+        #     board.print()
 
-        spot.power_off()
+        # spot.power_off()
 
 
 if __name__ == '__main__':

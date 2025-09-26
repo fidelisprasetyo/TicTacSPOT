@@ -28,10 +28,16 @@ from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 
 from dotenv import load_dotenv
 
+import os
+import datetime
+
 kImageSources = [
     'frontleft_fisheye_image', 'frontright_fisheye_image', 'left_fisheye_image',
     'right_fisheye_image', 'back_fisheye_image'
 ]
+
+save_dir = "test_dataset"
+os.makedirs(save_dir, exist_ok=True)
 
 
 def get_obj_and_img(network_compute_client, server, model, confidence, image_sources, label):
@@ -79,6 +85,11 @@ def get_obj_and_img(network_compute_client, server, model, confidence, image_sou
 
         img = get_bounding_box_image(resp)
         image_full = resp.image_response
+
+        # save img for testing
+        filename = os.path.join(save_dir, f"{source}_{datetime.datetime.now():%Y%m%d_%H%M%S}.png")
+        cv2.imwrite(filename, img)
+        print(f"Saved {filename}")
 
         # Show the image
         cv2.imshow('X-piece detection', img)
@@ -172,7 +183,7 @@ def find_center_px(polygon):
 PICK_UP_STATE_FAIL = 0
 PICK_UP_STATE_SUCCESS = 1
 PICK_UP_STATE_NOT_FOUND = 2
-MAX_TRY_COUNT = 2
+MAX_TRY_COUNT = 3
 
 def pick_up(options, robot):
 

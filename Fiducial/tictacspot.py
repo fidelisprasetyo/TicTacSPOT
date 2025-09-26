@@ -104,7 +104,7 @@ class TicTacSpot:
                 else:
                     print(f"[Detected grids: {grid_count}], Board is found: aligning the board horizontally")
                     self.velocity_move(duration = .5, rot = .5)
-                    time.sleep(.5)
+                    time.sleep(1)
 
             elif grid_count >= 3 and grid_count < 9:
                 _, (x, y) = get_grid(board_grids, 2,1)
@@ -118,11 +118,12 @@ class TicTacSpot:
                        rot_v = -rot_v
                        print(f"[Detected grids: {grid_count}], Rotate back!")
                     self.velocity_move(duration=.5, rot=rot_v)
-                    time.sleep(.5)
+                    time.sleep(1)
             else:
                 print("No board is found, try rotate")
                 self.roll = 0.0
                 self.velocity_move(duration = 1, rot = 1)
+                time.sleep(1)
 
             prev_grid_count = grid_count
             current_time = time.time()
