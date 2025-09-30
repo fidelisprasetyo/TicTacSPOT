@@ -28,10 +28,10 @@ We plan to improve the board detection by using all cameras for the detection. W
 .\Documents\TicTacSPOT\new_spot_env\Scripts\activate.bat
 
 2. Run the server-side
-```python network_compute_server.py -m "%USERPROFILE%\Documents\TicTacSPOT\Utilities\models\my_efficient_model\saved_model" "%USERPROFILE%\Documents\TicTacSPOT\pieces\annotations\annotations\label_map.pbtxt" -d -n "tictactoe" 192.168.80.3
+```python network_compute_server.py -m "%USERPROFILE%\Documents\TicTacSPOT\Utilities\models\my_efficient_model\saved_model" "%USERPROFILE%\Documents\TicTacSPOT\pieces\annotations\annotations\label_map.pbtxt" -d -n "tictactoe" 192.168.80.3```
 
 3. Run the client-side:
-```python main.py -m my_efficient_model -s tictactoe --first player -c 0.85 192.168.80.3
+```python main.py -m my_efficient_model -s tictactoe --first player -c 0.85 192.168.80.3```
 
 - -m : Model name running on the external server.
 - -s : Service name of external machine learning server.
