@@ -36,9 +36,8 @@ kImageSources = [
     'right_fisheye_image', 'back_fisheye_image'
 ]
 
-save_dir = "test_dataset"
-os.makedirs(save_dir, exist_ok=True)
-
+# save_dir = "test_dataset"
+# os.makedirs(save_dir, exist_ok=True)
 
 def get_obj_and_img(network_compute_client, server, model, confidence, image_sources, label):
 
@@ -86,10 +85,10 @@ def get_obj_and_img(network_compute_client, server, model, confidence, image_sou
         img = get_bounding_box_image(resp)
         image_full = resp.image_response
 
-        # save img for testing
-        filename = os.path.join(save_dir, f"{source}_{datetime.datetime.now():%Y%m%d_%H%M%S}.png")
-        cv2.imwrite(filename, img)
-        print(f"Saved {filename}")
+        # # save img for testing
+        # filename = os.path.join(save_dir, f"{source}_{datetime.datetime.now():%Y%m%d_%H%M%S}.png")
+        # cv2.imwrite(filename, img)
+        # print(f"Saved {filename}")
 
         # Show the image
         cv2.imshow('X-piece detection', img)
