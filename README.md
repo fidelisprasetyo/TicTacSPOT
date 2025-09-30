@@ -25,7 +25,7 @@ We plan to improve the board detection by using all cameras for the detection. W
 ## How to Run the Project
 
 1. Activate virtual environment:
-.\Documents\TicTacSPOT\new_spot_env\Scripts\activate.bat
+```.\Documents\TicTacSPOT\new_spot_env\Scripts\activate.bat```
 
 2. Run the server-side
 ```python network_compute_server.py -m "%USERPROFILE%\Documents\TicTacSPOT\Utilities\models\my_efficient_model\saved_model" "%USERPROFILE%\Documents\TicTacSPOT\pieces\annotations\annotations\label_map.pbtxt" -d -n "tictactoe" 192.168.80.3```
@@ -38,7 +38,7 @@ We plan to improve the board detection by using all cameras for the detection. W
 - --first : Who goes first ['player', 'spot']
 - -c : Minimum confidence to return an object for the x-piece (0.0 to 1.0)
 
-# TROUBLESHOOTING
+## TROUBLESHOOTING
 
 AttributeError: module 'tensorflow' has no attribute 'gfile'
 
