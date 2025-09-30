@@ -17,7 +17,8 @@ Computer vision is used to identify and locate the game board. Board are located
 ## Gameplay
 
 The game starts with the user or spot making the first move. The SPOT robot then calculates the best move using a Tic Tac Toe algorithm and places its piece on the board. The game continues until there's a winner or the board is full. The starting player can also be swapped.
-Demo: https://drive.google.com/file/d/18WocukvSnO16KLynNbc8ZAOIfnAXY3pF/view?usp=drive_link
+
++ Demo: https://drive.google.com/file/d/18WocukvSnO16KLynNbc8ZAOIfnAXY3pF/view?usp=drive_link
 
 ## Future Work
 
